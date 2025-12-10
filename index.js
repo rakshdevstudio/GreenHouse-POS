@@ -2436,7 +2436,7 @@ app.get('/', (req, res) => {
 
 // Catch-all: for any non-API GET route, send index.html so
 // React Router can handle the path on the frontend.
-app.get('*', (req, res) => {
+app.get('/*', (req, res) => {
   const p = req.path || '';
 
   // Let unmatched API-ish paths return 404 JSON instead of SPA
