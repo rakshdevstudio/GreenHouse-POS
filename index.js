@@ -2430,13 +2430,17 @@ const distPath = path.join(__dirname, 'greenhouse-pos', 'dist');
 app.use(express.static(distPath));
 
 // Root: serve the SPA index.html
+// Root: serve the SPA index.html
 app.get('/', (req, res) => {
   res.sendFile(path.join(distPath, 'index.html'));
 });
 
 // Catch-all: for any non-API GET route, send index.html so
 // React Router can handle the path on the frontend.
-app.get('/.*', (req, res) => {
+// NOTE: Using a regex here avoids the "Missing parameter name at index 2: /*"
+// error that can happen with patterns like "/*" or "/:path(*)" in newer
+// versions of path-to-regexp / Express.
+app.get(/.*/, (req, res) => {
   const p = req.path || '';
 
   // Let unmatched API-ish paths return 404 JSON instead of SPA
