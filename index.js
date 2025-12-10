@@ -34,7 +34,8 @@ const allowedOrigins = new Set([
   'http://127.0.0.1:5173',
   'http://localhost:5174',
   'http://127.0.0.1:5174',
-  'https://greenhouse-pos-frontend-production.up.railway.app' // ⚠️ replace with exact domain Railway shows
+  'https://greenhouse-pos-production.up.railway.app',
+  'https://greenhouse-pos-frontend-production.up.railway.app', // old separate frontend, safe to keep
 ]);
 
 app.use(cors({
@@ -56,16 +57,15 @@ const pool = new Pool({
   ssl: { rejectUnauthorized: false }
 });
 
-// --- Force DB session timezone for ALL queries ---
-// This ensures NOW(), created_at, and updated_at are all in IST
-(async () => {
+// --- Force DB session timezone for ALL connections ---
+// This ensures NOW(), created_at, and updated_at are all in IST for every pooled client
+pool.on('connect', async (client) => {
   try {
-    await pool.query("SET TIME ZONE 'Asia/Kolkata'");
-    console.log("DB timezone set to Asia/Kolkata");
+    await client.query("SET TIME ZONE 'Asia/Kolkata'");
   } catch (err) {
-    console.error("Failed to set DB timezone", err);
+    console.error("Failed to set DB timezone for a client", err);
   }
-})();
+});
 
 // ----------------- PRODUCTS: update price single -----------------
 // POST /products/update-price
@@ -2118,6 +2118,276 @@ app.get('/reports/stock-alerts', requireStoreOrAdmin, async (req, res) => {
     return res.json({ store_id: storeId, threshold, low_stock: rows });
   } catch (err) {
     console.error('stock-alerts report error', err);
+    return res.status(500).json({ error: 'server error' });
+  }
+});
+
+// ------------------------------------------------------------
+// Admin-only report aliases under /admin/reports/*
+// These mirror the store/admin combined /reports/* endpoints
+// but are locked to admin tokens and require an explicit store_id.
+// ------------------------------------------------------------
+
+// Admin: GET /admin/reports/daily-sales?store_id=1&date=YYYY-MM-DD
+app.get('/admin/reports/daily-sales', requireAdmin, async (req, res) => {
+  try {
+    const storeId = parseInt(req.query.store_id, 10);
+    if (!storeId) {
+      return res
+        .status(400)
+        .json({ error: 'store_id required for admin daily report' });
+    }
+
+    const dateStr = req.query.date;
+    if (!dateStr) {
+      return res
+        .status(400)
+        .json({ error: 'date (YYYY-MM-DD) is required' });
+    }
+
+    const summarySql = `
+      SELECT
+        COUNT(*)::int AS invoice_count,
+        COALESCE(SUM(total - tax),0)::numeric(12,2) AS subtotal_sales,
+        COALESCE(SUM(tax),0)::numeric(12,2)         AS total_tax,
+        COALESCE(SUM(total),0)::numeric(12,2)       AS total_sales
+      FROM invoices
+      WHERE store_id = $1
+        AND status <> 'voided'
+        AND created_at::date = $2::date
+    `;
+
+    const summaryRes = await pool.query(summarySql, [storeId, dateStr]);
+    const s =
+      summaryRes.rows[0] || {
+        invoice_count: 0,
+        subtotal_sales: 0,
+        total_tax: 0,
+        total_sales: 0,
+      };
+
+    const invoiceCount = Number(s.invoice_count || 0);
+    const subtotal = Number(s.subtotal_sales || 0);
+    const tax = Number(s.total_tax || 0);
+    const total = Number(s.total_sales || 0);
+    const avgInvoiceValue = invoiceCount ? total / invoiceCount : 0;
+
+    return res.json({
+      store_id: storeId,
+      date: dateStr,
+      totals: {
+        invoice_count: invoiceCount,
+        subtotal,
+        tax,
+        total,
+        avg_invoice_value: avgInvoiceValue,
+      },
+    });
+  } catch (err) {
+    console.error('admin daily-sales error', err);
+    return res.status(500).json({ error: 'server error' });
+  }
+});
+
+// Admin: GET /admin/reports/monthly?store_id=1&year=2025&month=12
+app.get('/admin/reports/monthly', requireAdmin, async (req, res) => {
+  try {
+    const storeId = parseInt(req.query.store_id, 10);
+    if (!storeId) {
+      return res
+        .status(400)
+        .json({ error: 'store_id is required for admin monthly report' });
+    }
+
+    const now = new Date();
+    const year = req.query.year ? Number(req.query.year) : now.getFullYear();
+    const month = req.query.month
+      ? Number(req.query.month)
+      : now.getMonth() + 1; // 1-12
+
+    if (!year || !month || month < 1 || month > 12) {
+      return res.status(400).json({ error: 'Invalid year or month' });
+    }
+
+    const start = new Date(Date.UTC(year, month - 1, 1, 0, 0, 0));
+    const end =
+      month === 12
+        ? new Date(Date.UTC(year + 1, 0, 1, 0, 0, 0))
+        : new Date(Date.UTC(year, month, 1, 0, 0, 0));
+
+    let invoiceCount, subtotal, tax, total;
+    let usedPrecomputed = false;
+
+    try {
+      const aggRes = await pool.query(
+        `SELECT invoice_count, subtotal, tax, total
+           FROM monthly_reports
+          WHERE store_id = $1 AND year = $2 AND month = $3
+          LIMIT 1`,
+        [storeId, year, month]
+      );
+      if (aggRes.rows.length) {
+        usedPrecomputed = true;
+        const row = aggRes.rows[0];
+        invoiceCount = Number(row.invoice_count || 0);
+        subtotal = Number(row.subtotal || 0);
+        tax = Number(row.tax || 0);
+        total = Number(row.total || 0);
+      }
+    } catch (err) {
+      console.error(
+        'admin read monthly_reports error (fallback to live invoices)',
+        err
+      );
+    }
+
+    if (!usedPrecomputed) {
+      const summarySql = `
+        SELECT
+          COUNT(*)::int AS invoice_count,
+          COALESCE(SUM(total - tax),0)::numeric(12,2) AS subtotal_sales,
+          COALESCE(SUM(tax),0)::numeric(12,2)         AS total_tax,
+          COALESCE(SUM(total),0)::numeric(12,2)       AS total_sales
+        FROM invoices
+        WHERE store_id = $1
+          AND status <> 'voided'
+          AND created_at >= $2
+          AND created_at <  $3
+      `;
+      const summaryRes = await pool.query(summarySql, [storeId, start, end]);
+      const s =
+        summaryRes.rows[0] || {
+          invoice_count: 0,
+          subtotal_sales: 0,
+          total_tax: 0,
+          total_sales: 0,
+        };
+
+      invoiceCount = Number(s.invoice_count || 0);
+      subtotal = Number(s.subtotal_sales || 0);
+      tax = Number(s.total_tax || 0);
+      total = Number(s.total_sales || 0);
+    }
+
+    const dailySql = `
+      SELECT
+        (created_at::date)                          AS day,
+        COUNT(*)::int                               AS invoice_count,
+        COALESCE(SUM(total),0)::numeric(12,2)       AS total_sales
+      FROM invoices
+      WHERE store_id = $1
+        AND status <> 'voided'
+        AND created_at >= $2
+        AND created_at <  $3
+      GROUP BY created_at::date
+      ORDER BY created_at::date
+    `;
+    const dailyRes = await pool.query(dailySql, [storeId, start, end]);
+
+    const payModeSql = `
+      SELECT
+        'ALL'::text                                  AS payment_mode,
+        COUNT(*)::int                                AS invoice_count,
+        COALESCE(SUM(total),0)::numeric(12,2)        AS total_sales
+      FROM invoices
+      WHERE store_id = $1
+        AND status <> 'voided'
+        AND created_at >= $2
+        AND created_at <  $3
+    `;
+    const payModeRes = await pool.query(payModeSql, [storeId, start, end]);
+
+    const by_day = dailyRes.rows.map((r) => ({
+      date: r.day,
+      invoice_count: Number(r.invoice_count || 0),
+      total: Number(r.total_sales || 0),
+    }));
+
+    const by_payment_mode = payModeRes.rows.map((r) => ({
+      payment_mode: r.payment_mode,
+      invoice_count: Number(r.invoice_count || 0),
+      total: Number(r.total_sales || 0),
+    }));
+
+    const avgInvoiceValue = invoiceCount ? total / invoiceCount : 0;
+
+    return res.json({
+      store_id: storeId,
+      year,
+      month,
+      from: start.toISOString(),
+      to: end.toISOString(),
+      used_precomputed: usedPrecomputed,
+      totals: {
+        invoice_count: invoiceCount,
+        subtotal,
+        tax,
+        total,
+        avg_invoice_value: avgInvoiceValue,
+      },
+      by_day,
+      by_payment_mode,
+    });
+  } catch (err) {
+    console.error('admin monthly report error', err);
+    return res.status(500).json({ error: 'server error' });
+  }
+});
+
+// Admin: GET /admin/reports/top-products?store_id=1&days=30&limit=10
+app.get('/admin/reports/top-products', requireAdmin, async (req, res) => {
+  try {
+    const storeId = parseInt(req.query.store_id, 10);
+    if (!storeId) {
+      return res
+        .status(400)
+        .json({ error: 'store_id required for admin top-products report' });
+    }
+
+    const days = parseInt(req.query.days || '30', 10);
+    const limit = parseInt(req.query.limit || '10', 10);
+
+    const q = `SELECT p.id AS product_id, p.sku, p.name,
+                      SUM(ii.qty)::numeric(12,3)    AS qty_sold,
+                      SUM(ii.amount)::numeric(12,2) AS sales_amount
+               FROM invoice_items ii
+               JOIN invoices i ON i.id = ii.invoice_id
+               JOIN products p ON p.id = ii.product_id
+               WHERE i.store_id = $1
+                 AND i.status <> 'voided'
+                 AND i.created_at >= now() - ($2::int || ' days')::interval
+                 AND p.deleted_at IS NULL
+               GROUP BY p.id, p.sku, p.name
+               ORDER BY qty_sold DESC
+               LIMIT $3`;
+    const rows = (await pool.query(q, [storeId, days, limit])).rows;
+    return res.json({ store_id: storeId, days, limit, top_products: rows });
+  } catch (err) {
+    console.error('admin top-products report error', err);
+    return res.status(500).json({ error: 'server error' });
+  }
+});
+
+// Admin: GET /admin/reports/stock-alerts?store_id=1&threshold=10
+app.get('/admin/reports/stock-alerts', requireAdmin, async (req, res) => {
+  try {
+    const storeId = parseInt(req.query.store_id, 10);
+    if (!storeId) {
+      return res
+        .status(400)
+        .json({ error: 'store_id required for admin stock-alerts report' });
+    }
+
+    const threshold = parseInt(req.query.threshold || '10', 10);
+
+    const q = `SELECT id, sku, name, price, stock, unit, allow_decimal_qty, updated_at
+               FROM products
+               WHERE store_id = $1 AND deleted_at IS NULL AND stock <= $2
+               ORDER BY stock ASC`;
+    const rows = (await pool.query(q, [storeId, threshold])).rows;
+    return res.json({ store_id: storeId, threshold, low_stock: rows });
+  } catch (err) {
+    console.error('admin stock-alerts report error', err);
     return res.status(500).json({ error: 'server error' });
   }
 });

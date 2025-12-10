@@ -1,6 +1,11 @@
 // src/lib/api.js
 
-const API_BASE = import.meta.env.VITE_API_BASE || "https://greenhouse-pos-production.up.railway.app";
+const rawBase = import.meta.env.VITE_API_BASE || "";
+// If VITE_API_BASE is set, use that (trim trailing slashes); otherwise default to same-origin ("")
+const API_BASE =
+  rawBase && rawBase.trim() !== ""
+    ? rawBase.replace(/\/+$/, "")
+    : "";
 
 /* ------------------------------------------------------------------ */
 /*  Low-level fetch wrapper                                           */
