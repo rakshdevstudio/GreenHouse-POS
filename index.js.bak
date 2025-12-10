@@ -1,0 +1,730 @@
+// index.js - Express server + Postgres pool + invoice endpoint + auth & terminal endpoints
+require('dotenv').config();
+const express = require('express');
+const { Pool } = require('pg');
+const { v4: uuidv4 } = require('uuid');
+
+const app = express();
+app.use(express.json());
+
+const PORT = process.env.PORT || 3000;
+const pool = new Pool({
+  connectionString: process.env.DATABASE_URL,
+  ssl: { rejectUnauthorized: false }
+});
+
+// ----------------- PRODUCTS: update price single -----------------
+// POST /products/update-price
+// Body:
+// {
+//   "store_id": 1,             // optional if product unique across store; recommended to avoid cross-store edits
+//   "product_id": 12,          // required
+//   "new_price": 30.50,        // required
+//   "changed_by": "admin"      // optional (username who made change)
+// }
+app.post('/products/update-price', requireAdmin, async (req, res) => {
+  const client = await pool.connect();
+  try {
+    const { store_id, product_id, new_price, changed_by } = req.body;
+
+    if (!product_id) return res.status(400).json({ error: 'product_id required' });
+    if (new_price === undefined || new_price === null) return res.status(400).json({ error: 'new_price required' });
+
+    // sanitize/parse
+    const price = parseFloat(new_price);
+    if (isNaN(price) || price < 0) return res.status(400).json({ error: 'new_price must be a non-negative number' });
+
+    await client.query('BEGIN');
+
+    // Fetch current product row (lock for update)
+    // If you want store scoping, include AND store_id = $2 in the WHERE clause and adjust params.
+    const productQuery = 'SELECT id, store_id, name, price FROM products WHERE id = $1 FOR UPDATE';
+    const prodRes = await client.query(productQuery, [product_id]);
+
+    if (!prodRes.rows.length) {
+      await client.query('ROLLBACK');
+      client.release();
+      return res.status(404).json({ error: 'product not found' });
+    }
+
+    const product = prodRes.rows[0];
+
+    // Optional: verify store_id matches (if provided)
+    if (store_id && product.store_id !== store_id) {
+      await client.query('ROLLBACK');
+      client.release();
+      return res.status(400).json({ error: 'product does not belong to provided store_id' });
+    }
+
+    const oldPrice = parseFloat(product.price || 0);
+
+    // Update product price and updated_at
+    await client.query(
+      `UPDATE products SET price = $1, updated_at = now() WHERE id = $2`,
+      [price, product_id]
+    );
+
+    // Insert into price history
+    const histRes = await client.query(
+      `INSERT INTO product_price_history (product_id, old_price, new_price, changed_by, changed_at)
+       VALUES ($1,$2,$3,$4, now()) RETURNING id, product_id, old_price, new_price, changed_by, changed_at`,
+      [product_id, oldPrice, price, changed_by || null]
+    );
+
+    await client.query('COMMIT');
+
+    // Build response: updated product + history row
+    const updatedProduct = {
+      id: product.id,
+      name: product.name,
+      store_id: product.store_id,
+      old_price: oldPrice,
+      new_price: price,
+      updated_at: new Date().toISOString()
+    };
+
+    client.release();
+    return res.status(200).json({ product: updatedProduct, history: histRes.rows[0] });
+  } catch (err) {
+    try { await client.query('ROLLBACK'); } catch (e) { /* ignore */ }
+    client.release();
+    console.error('update-price error', err);
+    return res.status(500).json({ error: err.message || 'server error' });
+  }
+});
+
+// Health
+app.get('/health', (req, res) => {
+  res.json({ status: 'ok', time: new Date().toISOString() });
+});
+
+// Simple products endpoint
+app.get('/products', async (req, res) => {
+  try {
+    const result = await pool.query("SELECT id, sku, name, price, stock, store_id FROM products WHERE deleted_at IS NULL ORDER BY id ASC LIMIT 500");
+    return res.json({ products: result.rows });
+  } catch (err) {
+    console.error(err);
+    return res.status(500).json({ products: [], note: 'db-error' });
+  }
+});
+
+// POST /products/create
+// Body:
+// {
+//   "sku": "TOM-1KG",
+//   "name": "Tomato (1kg)",
+//   "price": 30.00,
+//   "stock": 100,
+//   "store_id": 1
+// }
+app.post('/products/create', requireAdmin, async (req, res) => {  
+    const client = await pool.connect();
+  try {
+    const { sku, name, price = 0, stock = 0, store_id = 1 } = req.body;
+
+    if (!name) return res.status(400).json({ error: 'name required' });
+    if (!sku) return res.status(400).json({ error: 'sku required' });
+
+    const parsedPrice = parseFloat(price);
+    const parsedStock = parseInt(stock, 10);
+    if (isNaN(parsedPrice) || parsedPrice < 0) return res.status(400).json({ error: 'price must be non-negative number' });
+    if (isNaN(parsedStock) || parsedStock < 0) return res.status(400).json({ error: 'stock must be non-negative integer' });
+
+    // ensure sku unique per store (optional)
+    const exist = await client.query('SELECT id FROM products WHERE sku = $1 AND store_id = $2 LIMIT 1', [sku, store_id]);
+    if (exist.rows.length) {
+      client.release();
+      return res.status(409).json({ error: 'product with this sku already exists for the store' });
+    }
+
+    const ins = await client.query(
+      `INSERT INTO products (sku, name, price, stock, store_id, updated_at)
+       VALUES ($1,$2,$3,$4,$5, now())
+       RETURNING id, sku, name, price, stock, store_id, updated_at`,
+      [sku, name, parsedPrice, parsedStock, store_id]
+    );
+
+    client.release();
+    return res.status(201).json({ product: ins.rows[0] });
+  } catch (err) {
+    try { await client.query('ROLLBACK'); } catch(e){/*ignore*/}
+    client.release();
+    console.error('create product error', err);
+    return res.status(500).json({ error: 'server error' });
+  }
+});
+
+// PATCH /products/:id
+// Body: any of { sku, name, price, stock, store_id }
+app.patch('/products/:id', requireAdmin, async (req, res) => {
+  const client = await pool.connect();
+  try {
+    const productId = parseInt(req.params.id, 10);
+    if (!productId) return res.status(400).json({ error: 'invalid product id' });
+
+    const { sku, name, price, stock, store_id } = req.body;
+    if (sku === undefined && name === undefined && price === undefined && stock === undefined && store_id === undefined) {
+      client.release();
+      return res.status(400).json({ error: 'nothing to update' });
+    }
+
+    // build dynamic SET clause
+    const sets = [];
+    const params = [];
+    let idx = 1;
+
+    if (sku !== undefined) { sets.push(`sku = $${idx++}`); params.push(sku); }
+    if (name !== undefined) { sets.push(`name = $${idx++}`); params.push(name); }
+    if (price !== undefined) { sets.push(`price = $${idx++}`); params.push(parseFloat(price)); }
+    if (stock !== undefined) { sets.push(`stock = $${idx++}`); params.push(parseInt(stock, 10)); }
+    if (store_id !== undefined) { sets.push(`store_id = $${idx++}`); params.push(parseInt(store_id, 10)); }
+
+    // always update timestamp
+    sets.push(`updated_at = now()`);
+
+    // Optional: if sku provided, ensure uniqueness per store
+    if (sku !== undefined && (store_id !== undefined || true)) {
+      // If store_id specified use that, else fetch current store_id
+      const sId = store_id !== undefined ? parseInt(store_id,10) : null;
+      if (sId === null) {
+        // fetch product's current store_id
+        const cur = await client.query('SELECT store_id FROM products WHERE id = $1 LIMIT 1', [productId]);
+        if (!cur.rows.length) { client.release(); return res.status(404).json({ error: 'product not found' }); }
+      }
+      // Check SKU conflict (use provided or existing store_id)
+      const checkStoreId = sId !== null ? sId : (await client.query('SELECT store_id FROM products WHERE id = $1',[productId])).rows[0].store_id;
+      const conflict = await client.query('SELECT id FROM products WHERE sku = $1 AND store_id = $2 AND id <> $3 LIMIT 1', [sku, checkStoreId, productId]);
+      if (conflict.rows.length) { client.release(); return res.status(409).json({ error: 'another product with this sku exists for the store' }); }
+    }
+
+    const sql = `UPDATE products SET ${sets.join(', ')} WHERE id = $${idx} RETURNING id, sku, name, price, stock, store_id, updated_at`;
+    params.push(productId);
+
+    const r = await client.query(sql, params);
+    if (!r.rows.length) { client.release(); return res.status(404).json({ error: 'product not found' }); }
+
+    client.release();
+    return res.json({ product: r.rows[0] });
+  } catch (err) {
+    try { await client.query('ROLLBACK'); } catch(e){/*ignore*/ }
+    client.release();
+    console.error('update product error', err);
+    return res.status(500).json({ error: 'server error' });
+  }
+});
+
+// DELETE /products/:id  (soft delete — sets deleted_at)
+app.delete('/products/:id', requireAdmin, async (req, res) => {
+      const client = await pool.connect();
+  try {
+    const productId = parseInt(req.params.id, 10);
+    if (!productId) { client.release(); return res.status(400).json({ error: 'invalid product id' }); }
+
+    // mark as deleted (soft delete)
+    const r = await client.query(
+      `UPDATE products SET deleted_at = now() WHERE id = $1 AND deleted_at IS NULL RETURNING id, sku, name, price, stock, store_id, updated_at`,
+      [productId]
+    );
+
+    client.release();
+    if (!r.rows.length) return res.status(404).json({ error: 'product not found or already deleted' });
+    return res.json({ deleted: true, product: r.rows[0] });
+  } catch (err) {
+    try { await client.query('ROLLBACK'); } catch(e){}
+    client.release();
+    console.error('delete product error', err);
+    return res.status(500).json({ error: 'server error' });
+  }
+});
+
+
+// ----------------- Admin login -----------------
+// Admin login (simple) - uses pgcrypto crypt() hashing
+// POST /admin/login
+// Body: { "username": "admin", "password": "pass" }
+app.post('/admin/login', async (req, res) => {
+  const { username, password } = req.body;
+  if (!username || !password)
+    return res.status(400).json({ error: 'username & password required' });
+
+  const client = await pool.connect();
+  try {
+    // verify against admins table using crypt()
+    const q = `
+      SELECT id, username
+      FROM admins
+      WHERE username = $1
+        AND password_hash = crypt($2, password_hash)
+      LIMIT 1
+    `;
+    const r = await client.query(q, [username, password]);
+
+    if (!r.rows.length) {
+      client.release();
+      return res.status(401).json({ error: 'invalid credentials' });
+    }
+
+    const admin = r.rows[0];
+
+    // create a session token in sessions table (reuse sessions table)
+    const token = uuidv4();
+    const expiresAt = new Date(Date.now() + 7 * 24 * 3600 * 1000).toISOString(); // 7 days
+
+    await client.query(
+      `INSERT INTO sessions (store_id, token, terminal_uuid, expires_at)
+       VALUES ($1,$2,$3,$4)`,
+      [null, token, `admin:${admin.id}`, expiresAt]
+    );
+
+    client.release();
+    return res.json({ token, admin_id: admin.id });
+  } catch (err) {
+    client.release();
+    console.error('admin login error', err);
+    return res.status(500).json({ error: 'server error' });
+  }
+});
+
+
+// ----------------- Admin helpers -----------------
+
+// admin-only middleware: requires Authorization: Bearer <token>
+// recognizes admin sessions (terminal_uuid startsWith 'admin:')
+async function requireAdmin(req, res, next) {
+  try {
+    const auth = req.headers.authorization || '';
+    if (!auth.startsWith('Bearer ')) return res.status(401).json({ error: 'missing token' });
+    const token = auth.replace('Bearer ', '').trim();
+    const r = await pool.query(
+      `SELECT * FROM sessions WHERE token = $1 AND (expires_at IS NULL OR expires_at > now()) LIMIT 1`,
+      [token]
+    );
+    if (!r.rows.length) return res.status(401).json({ error: 'invalid token' });
+    const session = r.rows[0];
+    if (!session.terminal_uuid || !session.terminal_uuid.startsWith('admin:')) {
+      return res.status(403).json({ error: 'for admins only' });
+    }
+    req.admin_session = session;
+    next();
+  } catch (err) {
+    console.error('requireAdmin error', err);
+    return res.status(500).json({ error: 'server error' });
+  }
+}
+
+// POST /admin/create  (admin-only) - create another admin user
+// Body: { username, password }
+app.post('/admin/create', requireAdmin, async (req, res) => {
+  const client = await pool.connect();
+  try {
+    const { username, password } = req.body;
+    if (!username || !password) { client.release(); return res.status(400).json({ error: 'username & password required' }); }
+
+    // insert using pgcrypt crypt()
+    const q = `INSERT INTO admins (username, password_hash) VALUES ($1, crypt($2, gen_salt('bf'))) RETURNING id, username, created_at`;
+    const r = await client.query(q, [username, password]);
+    client.release();
+    return res.status(201).json({ admin: r.rows[0] });
+  } catch (err) {
+    client.release();
+    console.error('admin create error', err);
+    if (err.code === '23505') return res.status(409).json({ error: 'username exists' });
+    return res.status(500).json({ error: 'server error' });
+  }
+});
+
+// GET /admin/list (admin-only) - list admins
+app.get('/admin/list', requireAdmin, async (req, res) => {
+  try {
+    const r = await pool.query('SELECT id, username, created_at FROM admins ORDER BY id ASC');
+    return res.json({ admins: r.rows });
+  } catch (err) {
+    console.error('admin list error', err);
+    return res.status(500).json({ error: 'server error' });
+  }
+});
+
+// POST /terminals/register (register terminal_uuid to store)
+app.post('/terminals/register', async (req, res) => {
+  const { store_id, terminal_uuid, label } = req.body;
+  if (!store_id || !terminal_uuid) return res.status(400).json({ error: 'store_id and terminal_uuid required' });
+
+  const client = await pool.connect();
+  try {
+    const r = await client.query(
+      `INSERT INTO terminals (store_id, terminal_uuid, label)
+       VALUES ($1,$2,$3)
+       ON CONFLICT (terminal_uuid) DO UPDATE SET label = EXCLUDED.label
+       RETURNING id, store_id, terminal_uuid, label, created_at`,
+      [store_id, terminal_uuid, label || null]
+    );
+    client.release();
+    return res.json({ terminal: r.rows[0] });
+  } catch (err) {
+    client.release();
+    console.error('terminal register error', err);
+    return res.status(500).json({ error: 'server error' });
+  }
+});
+
+
+/*
+POST /invoices
+Body:
+{
+  "store_id": 1,
+  "terminal_id": 1,
+  "idempotency_key": "client-uuid-123",
+  "items": [
+    { "product_id": 1, "qty": 2 },
+    { "product_id": 2, "qty": 1 }
+  ],
+  "tax": 0.00,
+  "payment_mode": "CASH"
+}
+*/
+// POST /invoices (updated to include store name in response)
+app.post('/invoices', async (req, res) => {
+  const client = await pool.connect();
+  try {
+    const { store_id, terminal_id, idempotency_key, items, tax = 0, payment_mode = 'CASH' } = req.body;
+    if (!idempotency_key) return res.status(400).json({ error: 'idempotency_key required' });
+    if (!store_id || !terminal_id) return res.status(400).json({ error: 'store_id and terminal_id required' });
+    if (!items || !Array.isArray(items) || items.length === 0) return res.status(400).json({ error: 'items required' });
+
+    // Check idempotency
+    const existing = await client.query(
+      'SELECT id FROM invoices WHERE idempotency_key = $1 AND store_id = $2 LIMIT 1',
+      [idempotency_key, store_id]
+    );
+    if (existing.rows.length) {
+      const existId = existing.rows[0].id;
+      const inv = await client.query(
+        `SELECT i.*, s.name AS store_name
+         FROM invoices i JOIN stores s ON s.id = i.store_id
+         WHERE i.id = $1`,
+        [existId]
+      );
+      const itemsRes = await client.query(
+        `SELECT ii.*, p.name FROM invoice_items ii JOIN products p ON p.id = ii.product_id WHERE ii.invoice_id = $1`,
+        [existId]
+      );
+      const invRow = inv.rows[0];
+      const response = {
+        note: 'idempotent',
+        invoice: {
+          id: invRow.id,
+          invoice_no: invRow.invoice_no,
+          created_at: invRow.created_at,
+          store: { id: invRow.store_id, name: invRow.store_name },
+          terminal_id: invRow.terminal_id,
+          total: invRow.total,
+          tax: invRow.tax,
+          status: invRow.status,
+          idempotency_key: invRow.idempotency_key,
+          items: itemsRes.rows
+        }
+      };
+      client.release();
+      return res.status(200).json(response);
+    }
+
+    await client.query('BEGIN');
+
+    // Lock product rows to prevent concurrent stock race
+    const productIds = items.map(it => it.product_id);
+    const placeholders = productIds.map((_, i) => `$${i + 1}`).join(',');
+    const productQuery = `SELECT id, name, price, stock FROM products WHERE id IN (${placeholders}) FOR UPDATE`;
+    const productRes = await client.query(productQuery, productIds);
+
+    const prodMap = {};
+    for (const r of productRes.rows) prodMap[r.id] = r;
+
+    // Validate and compute totals
+    let subtotal = 0;
+    const invoiceItems = [];
+    for (const it of items) {
+      const p = prodMap[it.product_id];
+      if (!p) throw new Error(`Product ${it.product_id} not found`);
+      const qty = parseInt(it.qty, 10);
+      if (isNaN(qty) || qty <= 0) throw new Error('Invalid qty');
+      if (p.stock < qty) throw new Error(`Insufficient stock for product ${p.id} (${p.name})`);
+      const rate = parseFloat(p.price);
+      const amount = +(rate * qty).toFixed(2);
+      subtotal += amount;
+      invoiceItems.push({ product_id: it.product_id, qty, rate, amount, name: p.name });
+    }
+
+    const total = +(subtotal + parseFloat(tax || 0)).toFixed(2);
+    const invoice_no = `INV-${Date.now()}`;
+
+    // Insert invoice
+    const insertInv = await client.query(
+      `INSERT INTO invoices (invoice_no, store_id, terminal_id, total, tax, idempotency_key)
+       VALUES ($1,$2,$3,$4,$5,$6) RETURNING id, invoice_no, created_at`,
+      [invoice_no, store_id, terminal_id, total, tax, idempotency_key]
+    );
+    const invoiceId = insertInv.rows[0].id;
+
+    // Insert items & decrement stock
+    for (const it of invoiceItems) {
+      await client.query(
+        `INSERT INTO invoice_items (invoice_id, product_id, qty, rate, amount)
+         VALUES ($1,$2,$3,$4,$5)`,
+        [invoiceId, it.product_id, it.qty, it.rate, it.amount]
+      );
+      await client.query(`UPDATE products SET stock = stock - $1, updated_at = now() WHERE id = $2`, [it.qty, it.product_id]);
+    }
+
+    await client.query('COMMIT');
+
+    // fetch store name for response
+    const storeRes = await client.query('SELECT id, name FROM stores WHERE id = $1 LIMIT 1', [store_id]);
+    const storeRow = storeRes.rows[0] || { id: store_id, name: null };
+
+    // Build printable payload including store name
+    const payload = {
+      invoice_id: invoiceId,
+      invoice_no,
+      store: { id: storeRow.id, name: storeRow.name },
+      terminal_id,
+      created_at: new Date().toISOString(),
+      items: invoiceItems.map(i => ({ product_id: i.product_id, name: i.name, qty: i.qty, rate: i.rate, amount: i.amount })),
+      subtotal: +subtotal.toFixed(2),
+      tax: +parseFloat(tax || 0).toFixed(2),
+      total,
+      payment_mode
+    };
+
+    client.release();
+    return res.status(201).json({ invoice: payload });
+
+  } catch (err) {
+    try { await client.query('ROLLBACK'); } catch(e){ }
+    client.release();
+    console.error('Invoice error', err.message || err);
+    return res.status(500).json({ error: err.message || 'server error' });
+  }
+});
+
+
+// GET invoice details (simple)
+app.get('/invoices/:id', async (req, res) => {
+  try {
+    const invId = parseInt(req.params.id, 10);
+
+    const invRes = await pool.query(
+      `SELECT i.*, s.name AS store_name
+       FROM invoices i
+       JOIN stores s ON s.id = i.store_id
+       WHERE i.id = $1`,
+      [invId]
+    );
+
+    if (!invRes.rows.length) return res.status(404).json({ error: 'not found' });
+
+    const inv = invRes.rows[0];
+
+    const itemsRes = await pool.query(
+      `SELECT ii.*, p.name
+       FROM invoice_items ii
+       JOIN products p ON p.id = ii.product_id
+       WHERE ii.invoice_id = $1`,
+      [invId]
+    );
+
+    inv.items = itemsRes.rows;
+
+    // build cleaner structure
+    const response = {
+      invoice: {
+        id: inv.id,
+        invoice_no: inv.invoice_no,
+        created_at: inv.created_at,
+        store: {
+          id: inv.store_id,
+          name: inv.store_name
+        },
+        terminal_id: inv.terminal_id,
+        total: inv.total,
+        tax: inv.tax,
+        status: inv.status,
+        idempotency_key: inv.idempotency_key,
+        items: inv.items
+      }
+    };
+
+    return res.json(response);
+
+  } catch (err) {
+    console.error(err);
+    return res.status(500).json({ error: 'server error' });
+  }
+});
+
+// GET /products/changes?since=...&store_id=...
+app.get('/products/changes', async (req, res) => {
+  try {
+    const since = req.query.since;
+    const storeId = req.query.store_id ? parseInt(req.query.store_id, 10) : null;
+    if (!since) return res.status(400).json({ error: 'since query param required (ISO timestamp)' });
+
+    const q = storeId
+      ? `SELECT id, sku, name, price, stock, store_id, updated_at FROM products WHERE store_id=$1 AND updated_at > $2 ORDER BY updated_at ASC`
+      : `SELECT id, sku, name, price, stock, store_id, updated_at FROM products WHERE updated_at > $1 ORDER BY updated_at ASC`;
+
+    const params = storeId ? [storeId, since] : [since];
+    const r = await pool.query(q, params);
+    return res.json({ since, count: r.rows.length, products: r.rows });
+  } catch (err) {
+    console.error('products changes error', err);
+    return res.status(500).json({ error: 'server error' });
+  }
+});
+
+// GET /product-price-history?product_id=1
+app.get('/product-price-history', async (req, res) => {
+  try {
+    const productId = parseInt(req.query.product_id, 10);
+    if (!productId) return res.status(400).json({ error: 'product_id required' });
+
+    const r = await pool.query(
+      `SELECT id, product_id, old_price, new_price, changed_by, changed_at
+       FROM product_price_history
+       WHERE product_id = $1
+       ORDER BY changed_at DESC
+       LIMIT 100`,
+      [productId]
+    );
+
+    return res.json({ product_id: productId, history: r.rows });
+  } catch (err) {
+    console.error('product history error', err);
+    return res.status(500).json({ error: 'server error' });
+  }
+});
+
+// POST /products/update-prices (bulk)
+// Body: { "updates": [ { "product_id":1, "new_price": 35.5, "changed_by":"admin" }, ... ] }
+app.post('/products/update-prices', requireAdmin, async (req, res) => {
+  const client = await pool.connect();
+  try {
+    const { updates } = req.body;
+    if (!Array.isArray(updates) || updates.length === 0) return res.status(400).json({ error: 'updates array required' });
+
+    await client.query('BEGIN');
+
+    const results = [];
+    for (const u of updates) {
+      const product_id = u.product_id;
+      const price = parseFloat(u.new_price);
+      const changed_by = u.changed_by || null;
+      if (!product_id || isNaN(price) || price < 0) {
+        await client.query('ROLLBACK');
+        client.release();
+        return res.status(400).json({ error: 'invalid product_id or new_price in updates' });
+      }
+
+      const prodRes = await client.query('SELECT id, name, price FROM products WHERE id = $1 FOR UPDATE', [product_id]);
+      if (!prodRes.rows.length) {
+        await client.query('ROLLBACK');
+        client.release();
+        return res.status(404).json({ error: `product ${product_id} not found` });
+      }
+
+      const oldPrice = parseFloat(prodRes.rows[0].price || 0);
+      await client.query('UPDATE products SET price = $1, updated_at = now() WHERE id = $2', [price, product_id]);
+      const hist = await client.query(
+        `INSERT INTO product_price_history (product_id, old_price, new_price, changed_by, changed_at)
+         VALUES ($1,$2,$3,$4, now()) RETURNING id, product_id, old_price, new_price, changed_by, changed_at`,
+        [product_id, oldPrice, price, changed_by]
+      );
+      results.push({ product_id, name: prodRes.rows[0].name, old_price: oldPrice, new_price: price, history: hist.rows[0] });
+    }
+
+    await client.query('COMMIT');
+    client.release();
+    return res.json({ updated: results.length, results });
+  } catch (err) {
+    try { await client.query('ROLLBACK'); } catch(e) {}
+    client.release();
+    console.error('bulk update error', err);
+    return res.status(500).json({ error: 'server error' });
+  }
+});
+
+
+// GET /reports/daily-sales?store_id=1&date=2025-12-04
+// Returns total sales (count, subtotal, tax, total) and list of invoices for that day
+app.get('/reports/daily-sales', async (req, res) => {
+  try {
+    const storeId = parseInt(req.query.store_id, 10);
+    const date = req.query.date; // YYYY-MM-DD
+    if (!storeId || !date) return res.status(400).json({ error: 'store_id and date (YYYY-MM-DD) required' });
+
+    const q = `SELECT i.id, i.invoice_no, i.created_at, i.total, i.tax
+               FROM invoices i
+               WHERE i.store_id = $1 AND (i.created_at::date) = $2::date
+               ORDER BY i.created_at ASC`;
+    const invoices = (await pool.query(q, [storeId, date])).rows;
+
+    const summaryQ = `SELECT COUNT(*)::int AS invoice_count, COALESCE(SUM(total),0)::numeric(12,2) AS total_sales, COALESCE(SUM(tax),0)::numeric(12,2) AS total_tax
+                      FROM invoices WHERE store_id = $1 AND (created_at::date) = $2::date`;
+    const summary = (await pool.query(summaryQ, [storeId, date])).rows[0];
+
+    return res.json({ date, store_id: storeId, summary, invoices });
+  } catch (err) {
+    console.error('daily-sales report error', err);
+    return res.status(500).json({ error: 'server error' });
+  }
+});
+
+// GET /reports/top-products?store_id=1&days=30&limit=10
+// Returns top-selling products by quantity in the past N days
+app.get('/reports/top-products', async (req, res) => {
+  try {
+    const storeId = parseInt(req.query.store_id, 10);
+    const days = parseInt(req.query.days || '30', 10);
+    const limit = parseInt(req.query.limit || '10', 10);
+    if (!storeId) return res.status(400).json({ error: 'store_id required' });
+
+    const q = `SELECT p.id AS product_id, p.sku, p.name, SUM(ii.qty)::int AS qty_sold, SUM(ii.amount)::numeric(12,2) AS sales_amount
+               FROM invoice_items ii
+               JOIN invoices i ON i.id = ii.invoice_id
+               JOIN products p ON p.id = ii.product_id
+               WHERE i.store_id = $1 AND i.created_at >= now() - ($2::int || ' days')::interval
+               GROUP BY p.id, p.sku, p.name
+               ORDER BY qty_sold DESC
+               LIMIT $3`;
+    const rows = (await pool.query(q, [storeId, days, limit])).rows;
+    return res.json({ store_id: storeId, days, limit, top_products: rows });
+  } catch (err) {
+    console.error('top-products report error', err);
+    return res.status(500).json({ error: 'server error' });
+  }
+});
+
+// GET /reports/stock-alerts?store_id=1&threshold=10
+// Returns products with stock less than or equal to threshold
+app.get('/reports/stock-alerts', async (req, res) => {
+  try {
+    const storeId = parseInt(req.query.store_id, 10);
+    const threshold = parseInt(req.query.threshold || '10', 10);
+    if (!storeId) return res.status(400).json({ error: 'store_id required' });
+
+    const q = `SELECT id, sku, name, price, stock, updated_at
+               FROM products
+               WHERE store_id = $1 AND deleted_at IS NULL AND stock <= $2
+               ORDER BY stock ASC`;
+    const rows = (await pool.query(q, [storeId, threshold])).rows;
+    return res.json({ store_id: storeId, threshold, low_stock: rows });
+  } catch (err) {
+    console.error('stock-alerts report error', err);
+    return res.status(500).json({ error: 'server error' });
+  }
+});
+
+app.listen(PORT, () => {
+  console.log(`API listening on http://localhost:${PORT}`);
+});
