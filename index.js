@@ -2154,6 +2154,19 @@ app.get('/', (req, res) => {
   res.send('GreenHouse POS backend is running ✅');
 });
 
+// Fallback catch‑all for any unknown GET route so hitting the bare
+// Railway domain (/, /index, etc.) never returns a 404 from Express.
+// All real API routes are defined above, so this only catches
+// unmatched paths.
+app.use((req, res, next) => {
+  if (req.method === 'GET') {
+    return res
+      .status(200)
+      .send('GreenHouse POS backend is running ✅ (fallback route)');
+  }
+  return res.status(404).json({ error: 'Not found' });
+});
+
 server.listen(PORT, () => {
   console.log(`API + WS listening on http://localhost:${PORT}`);
 });
