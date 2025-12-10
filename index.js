@@ -1,6 +1,7 @@
 // index.js - Express server + Postgres pool + invoice endpoint + auth & terminal endpoints
 require('dotenv').config();
 const express = require('express');
+const path = require('path');
 const { Pool } = require('pg');
 const cors = require('cors');
 const { v4: uuidv4 } = require('uuid');
@@ -2150,22 +2151,39 @@ function broadcastNewInvoice(invoice) {
   });
 }
 
-// Simple root route so Railway / browser health checks don't 500
+// --------------------------------------------------------------
+// Serve React frontend build (Vite) from greenhouse-pos/dist
+// --------------------------------------------------------------
+const distPath = path.join(__dirname, 'greenhouse-pos', 'dist');
+
+// Serve static assets (JS, CSS, images)
+app.use(express.static(distPath));
+
+// Root: serve the SPA index.html
 app.get('/', (req, res) => {
-  res.send('GreenHouse POS backend is running ✅');
+  res.sendFile(path.join(distPath, 'index.html'));
 });
 
-// Fallback catch‑all for any unknown GET route so hitting the bare
-// Railway domain (/, /index, etc.) never returns a 404 from Express.
-// All real API routes are defined above, so this only catches
-// unmatched paths.
-app.use((req, res, next) => {
-  if (req.method === 'GET') {
-    return res
-      .status(200)
-      .send('GreenHouse POS backend is running ✅ (fallback route)');
+// Catch-all: for any non-API GET route, send index.html so
+// React Router can handle the path on the frontend.
+app.get('*', (req, res) => {
+  const p = req.path || '';
+
+  // Let unmatched API-ish paths return 404 JSON instead of SPA
+  if (
+    p.startsWith('/auth') ||
+    p.startsWith('/admin') ||
+    p.startsWith('/products') ||
+    p.startsWith('/invoices') ||
+    p.startsWith('/reports') ||
+    p.startsWith('/store') ||
+    p.startsWith('/scale') ||
+    p.startsWith('/db-info')
+  ) {
+    return res.status(404).json({ error: 'Not found' });
   }
-  return res.status(404).json({ error: 'Not found' });
+
+  return res.sendFile(path.join(distPath, 'index.html'));
 });
 
 server.listen(PORT, () => {
