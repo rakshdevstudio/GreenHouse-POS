@@ -2149,6 +2149,11 @@ function broadcastNewInvoice(invoice) {
   });
 }
 
+// Simple root route so Railway / browser health checks don't 500
+app.get('/', (req, res) => {
+  res.send('GreenHouse POS backend is running ✅');
+});
+
 server.listen(PORT, () => {
   console.log(`API + WS listening on http://localhost:${PORT}`);
 });
