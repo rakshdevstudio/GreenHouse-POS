@@ -1,11 +1,26 @@
 // src/lib/api.js
 
 const rawBase = import.meta.env.VITE_API_BASE || "";
-// If VITE_API_BASE is set, use that (trim trailing slashes); otherwise default to same-origin ("")
-const API_BASE =
-  rawBase && rawBase.trim() !== ""
-    ? rawBase.replace(/\/+$/, "")
-    : "";
+
+// Decide API base URL:
+// - If VITE_API_BASE is set, use that (trim trailing slashes).
+// - Otherwise, in dev (Vite on 5173/5174/5175), talk to backend on :4000.
+// - In production, default to same-origin.
+let API_BASE = "";
+
+if (rawBase && rawBase.trim() !== "") {
+  API_BASE = rawBase.replace(/\/+$/, "");
+} else if (typeof window !== "undefined") {
+  const origin = window.location.origin;
+
+  // If we are on Vite dev server, assume backend on :4000
+  if (origin.match(/:5173$|:5174$|:5175$/)) {
+    API_BASE = origin.replace(/:\d+$/, ":4000");
+  } else {
+    // Same-origin (Railway production, etc.)
+    API_BASE = origin;
+  }
+}
 
 /* ------------------------------------------------------------------ */
 /*  Low-level fetch wrapper                                           */

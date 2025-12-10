@@ -29,33 +29,39 @@ if (process.env.MOCK_SCALE === '1') {
 // --- CORS: friendly dev defaults ---
 // Allow Vite dev servers on 5173 and 5174 and also allow non-browser requests (curl, server-side).
 // In production you should change this to your exact frontend origin(s).
+// --- CORS: friendly dev + production ---
+// Allow Vite dev servers on 5173/5174/5175 and production URLs.
 const allowedOrigins = new Set([
   'http://localhost:5173',
   'http://127.0.0.1:5173',
   'http://localhost:5174',
   'http://127.0.0.1:5174',
+  'http://localhost:5175',
+  'http://127.0.0.1:5175',
   'https://greenhouse-pos-production.up.railway.app',
   'https://greenhouse-pos-frontend-production.up.railway.app', // old separate frontend, safe to keep
 ]);
 
 app.use(cors({
-  origin: function(origin, callback) {
-    // allow requests with no origin (curl, mobile apps, server-to-server)
+  origin: function (origin, callback) {
+    // allow requests with no origin (curl, mobile apps, etc.)
     if (!origin) return callback(null, true);
+
     if (allowedOrigins.has(origin)) return callback(null, true);
+
+    // Extra safety: allow any localhost:PORT during dev
+    if (
+      /^http:\/\/localhost:\d+$/.test(origin) ||
+      /^http:\/\/127\.0\.0\.1:\d+$/.test(origin)
+    ) {
+      return callback(null, true);
+    }
+
     return callback(new Error('CORS not allowed for origin ' + origin));
   },
-  methods: ['GET','POST','PATCH','PUT','DELETE','OPTIONS'],
-  credentials: true
+  methods: ['GET', 'POST', 'PATCH', 'PUT', 'DELETE', 'OPTIONS'],
+  credentials: true,
 }));
-
-app.use(express.json());
-
-const PORT = process.env.PORT || 3000;
-const pool = new Pool({
-  connectionString: process.env.DATABASE_URL,
-  ssl: { rejectUnauthorized: false }
-});
 
 // --- Force DB session timezone for ALL connections ---
 // This ensures NOW(), created_at, and updated_at are all in IST for every pooled client
@@ -2440,23 +2446,9 @@ app.get('/', (req, res) => {
 // NOTE: Using a regex here avoids the "Missing parameter name at index 2: /*"
 // error that can happen with patterns like "/*" or "/:path(*)" in newer
 // versions of path-to-regexp / Express.
-app.get(/.*/, (req, res) => {
-  const p = req.path || '';
-
-  // Let unmatched API-ish paths return 404 JSON instead of SPA
-  if (
-    p.startsWith('/auth') ||
-    p.startsWith('/admin') ||
-    p.startsWith('/products') ||
-    p.startsWith('/invoices') ||
-    p.startsWith('/reports') ||
-    p.startsWith('/store') ||
-    p.startsWith('/scale') ||
-    p.startsWith('/db-info')
-  ) {
-    return res.status(404).json({ error: 'Not found' });
-  }
-
+// Catch-all: for any non-API GET route, send index.html so
+// React Router can handle the path on the frontend.
+app.get(/^\/(?!auth|admin|products|invoices|reports|store|scale|db-info).*/, (req, res) => {
   return res.sendFile(path.join(distPath, 'index.html'));
 });
 

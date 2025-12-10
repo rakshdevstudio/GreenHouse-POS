@@ -56,7 +56,12 @@ const isLoggedIn = isStoreLoggedIn || isAdminLoggedIn || isOverlayAdmin;
   useEffect(() => {
     async function ping() {
       try {
-        const base = import.meta.env.VITE_API_BASE || "http://localhost:3000";
+        const rawBase = import.meta.env.VITE_API_BASE || "";
+        // If VITE_API_BASE is set, use that; otherwise default to same-origin
+        const base =
+          rawBase && rawBase.trim() !== ""
+            ? rawBase.replace(/\/+$/, "")
+            : window.location.origin;
         const res = await fetch(base + "/health");
         setApiHealthy(res.ok);
       } catch {
@@ -96,7 +101,7 @@ const isLoggedIn = isStoreLoggedIn || isAdminLoggedIn || isOverlayAdmin;
       return;
     }
 
-      try {
+    try {
     const res = await api.adminLogin({
       username: adminUser,
       password: adminPass,
