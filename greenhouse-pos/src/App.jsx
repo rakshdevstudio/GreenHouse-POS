@@ -54,18 +54,29 @@ const isLoggedIn = isStoreLoggedIn || isAdminLoggedIn || isOverlayAdmin;
 
   // Ping backend health so status pill can show OK / offline
   useEffect(() => {
+    let cancelled = false;
+
     async function ping() {
       try {
-        const base = import.meta.env.VITE_API_BASE || "http://localhost:3000";
-        const res = await fetch(base + "/health");
-        setApiHealthy(res.ok);
-      } catch {
-        setApiHealthy(false);
+        await api.health();
+        if (!cancelled) {
+          setApiHealthy(true);
+        }
+      } catch (err) {
+        if (!cancelled) {
+          setApiHealthy(false);
+          console.error("health ping failed", err);
+        }
       }
     }
+
     ping();
     const id = setInterval(ping, 30000);
-    return () => clearInterval(id);
+
+    return () => {
+      cancelled = true;
+      clearInterval(id);
+    };
   }, []);
 
   // Hidden owner/admin unlock: click brand 7 times

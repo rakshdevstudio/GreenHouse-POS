@@ -1,6 +1,32 @@
 // src/lib/api.js
 
-const API_BASE = import.meta.env.VITE_API_BASE || "http://localhost:3000";
+const rawBase = import.meta.env.VITE_API_BASE || "";
+
+// Decide API base URL:
+// - If VITE_API_BASE is set, use that (trim trailing slashes).
+// - Otherwise, when running under Vite dev server (ports 5173/5174/5175),
+//   talk to the backend on port 4000.
+// - In production (Railway, etc.), default to same-origin.
+let API_BASE = "";
+
+if (rawBase && rawBase.trim() !== "") {
+  API_BASE = rawBase.replace(/\/+$/, "");
+} else if (typeof window !== "undefined") {
+  const origin = window.location.origin;
+
+  // If we are on Vite dev server (frontend on 5173/5174/5175),
+  // assume backend is on :4000 on the same host.
+  if (origin.match(/:5173$|:5174$|:5175$/)) {
+    API_BASE = origin.replace(/:\d+$/, ":4000");
+  } else {
+    // Same-origin (Express serving React in production)
+    API_BASE = origin;
+  }
+}
+
+export function getApiBase() {
+  return API_BASE;
+}
 
 /* ------------------------------------------------------------------ */
 /*  Low-level fetch wrapper                                           */

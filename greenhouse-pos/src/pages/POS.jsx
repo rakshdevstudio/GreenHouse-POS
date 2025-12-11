@@ -1,6 +1,6 @@
 // src/pages/POS.jsx
 import React, { useEffect, useState, useMemo, useRef } from "react";
-import api from "../lib/api";
+import api, { getApiBase } from "../lib/api";
 
 // Format invoice date/time consistently for receipt + screen
 function formatInvoiceDateTime(iso) {
@@ -268,42 +268,62 @@ useEffect(() => {
 
   // Subscribe to weighing scale stream (SSE)
   useEffect(() => {
-    // If you want to temporarily disable auto-fill from scale, return early here.
-    // if (!activeProduct) return;
+  const base = getApiBase();
+  const url = `${base}/scale/stream`;
+  let ev;
 
-    const url = "http://localhost:3000/scale/stream";
-    let ev;
+  try {
+    ev = new EventSource(url);
 
-    try {
-      ev = new EventSource(url);
+    ev.onmessage = (event) => {
+      if (!event.data) return;
+      try {
+        const data = JSON.parse(event.data);
+        if (data.weight_kg == null) return;
 
-      ev.onmessage = (event) => {
-        if (!event.data) return;
-        try {
-          const data = JSON.parse(event.data);
-          if (data.weight_kg == null) return;
+        const w = Number(data.weight_kg);
+        if (!Number.isFinite(w) || w <= 0) return;
 
-          const w = Number(data.weight_kg);
-          if (!Number.isFinite(w) || w <= 0) return;
+        // Keep 4 decimal places but strip trailing zeros for display.
+        const formatted = w.toFixed(4).replace(/0+$/, "").replace(/\.$/, "");
+        setWeightKg(formatted);
+      } catch (err) {
+        console.warn("scale/stream parse error", err);
+      }
+    };
 
-          // Keep 4 decimal places but strip trailing zeros for display.
-          const formatted = w.toFixed(4).replace(/0+$/, "").replace(/\.$/, "");
-          setWeightKg(formatted);
-        } catch (err) {
-          console.warn("scale/stream parse error", err);
-        }
-      };
+    ev.onerror = (err) => {
+      console.warn("scale/stream error", err);
+      // Optional: close on error so it doesn't hammer logs
+      // ev.close();
+    };
+  } catch (err) {
+    console.warn("EventSource init error", err);
+  }
 
-      ev.onerror = (err) => {
-        console.warn("scale/stream error", err);
-      };
-    } catch (err) {
-      console.warn("EventSource init error", err);
+  // cleanup on unmount or effect re-run
+  return () => {
+    if (ev) {
+      ev.close();
     }
+  };
+}, []); // 👈 VERY IMPORTANT: empty deps, so it runs only once (per mount)
 
+  // Dev helper: allow mocking the scale from browser console
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+
+    // Call: window.scaleMock(0.8567)
+    window.scaleMock = (w) => {
+      return api.scaleMock(w).catch((err) => {
+        console.error("scaleMock failed", err);
+      });
+    };
+
+    // Cleanup on unmount
     return () => {
-      if (ev) {
-        ev.close();
+      if (window.scaleMock) {
+        delete window.scaleMock;
       }
     };
   }, []);
