@@ -6,6 +6,7 @@
   "scripts": {
     "start": "node index.js",
     "dev": "nodemon index.js",
+    "postinstall": "npm --prefix greenhouse-pos install",
     "install_frontend": "cd greenhouse-pos && npm ci --include=dev",
     "build": "cd greenhouse-pos && npm run build"
   },
