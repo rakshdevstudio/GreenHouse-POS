@@ -35,52 +35,25 @@ if (process.env.MOCK_SCALE === '1') {
 // ----------------------------------------------------
 
 // Explicit list of allowed domains (includes development and production Railway URL)
-const ALLOWED_EXACT_ORIGINS = [
+const ALLOWED_ORIGINS_ARRAY = [
     'http://localhost:5173',
     'http://127.0.0.1:5173',
     'http://localhost:5174',
     'http://127.0.0.1:5174',
-    // Your Railway production domain
     'https://greenhouse-pos-production.up.railway.app', 
-    // Your Vercel frontend domain
-    'https://green-house-pos.vercel.app' 
+    'https://green-house-pos.vercel.app', 
+    /https:\/\/[^/]*\.vercel\.app$/, // Regex pattern for Vercel subdomains
 ];
 
 // Combine the list of exact origins and the dynamic Vercel regex
 const allowed = [...ALLOWED_EXACT_ORIGINS, /https:\/\/[^/]*\.vercel\.app$/];
 
 app.use(require('cors')({
-    origin: function(origin, callback) {
-        // 1. Allow requests with no origin (e.g., internal server-to-server or curl)
-        if (!origin) return callback(null, true);
-
-        // 2. Check against all allowed origins (explicit list + regex)
-        let isAllowed = false;
-        
-        for (const allowedOrigin of allowed) {
-            // Check explicit string match
-            if (typeof allowedOrigin === 'string' && allowedOrigin === origin) {
-                isAllowed = true;
-                break;
-            }
-            // Check dynamic Vercel domains using RegExp
-            if (allowedOrigin instanceof RegExp && allowedOrigin.test(origin)) {
-                isAllowed = true;
-                break;
-            }
-        }
-        
-        if (isAllowed) {
-            // Success: Allow the request
-            return callback(null, true);
-        } else {
-            // Failure: Reject the request
-            console.error(`CORS BLOCKED for origin: ${origin}`);
-            return callback(new Error('CORS not allowed for origin ' + origin));
-        }
-    },
-    methods: ['GET', 'POST', 'PATCH', 'PUT', 'DELETE', 'OPTIONS'],
+    // Replace the entire custom 'origin' function with the array variable:
+    origin: ALLOWED_ORIGINS_ARRAY, 
+    
     credentials: true,
+    methods: ['GET', 'POST', 'PATCH', 'PUT', 'DELETE', 'OPTIONS'],
     allowedHeaders: ['Content-Type', 'Authorization', 'Accept', 'X-Requested-With'],
 }));
 // ----------------------------------------------------
