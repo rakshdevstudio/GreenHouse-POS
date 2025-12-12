@@ -2139,33 +2139,138 @@ app.get('/reports/stock-alerts', requireStoreOrAdmin, async (req, res) => {
 });
 
 // Create HTTP server & attach Express app
+// Create HTTP server & attach Express app
 const server = http.createServer(app);
 
-// Create WebSocket server on same port, under /ws
-const wss = new WebSocket.Server({ server, path: '/ws' });
+// --- Robust WebSocket setup (noServer upgrade handling + origin check) ---
+const wss = new WebSocket.Server({ noServer: true });
 
-wss.on('connection', (ws) => {
-  console.log('WS client connected');
+// Build a fast hostname allow-set from ALLOWED_ORIGINS_ARRAY
+const _allowedHostnames = new Set();
+(ALLOWED_ORIGINS_ARRAY || []).forEach((v) => {
+  if (typeof v === 'string') {
+    try {
+      const u = new URL(v);
+      _allowedHostnames.add(u.hostname);
+    } catch (e) {
+      // not a URL string (maybe 'localhost'), keep raw
+      _allowedHostnames.add(String(v));
+    }
+  }
+});
+
+function isWsOriginAllowed(origin) {
+  if (!origin) return true; // allow server-side clients (non-browser)
+  try {
+    const u = new URL(origin);
+    // allow vercel preview/app hostnames
+    if (u.hostname.endsWith('.vercel.app')) return true;
+    if (_allowedHostnames.has(u.hostname)) return true;
+    // allow same-origin hostnames (useful in dev)
+    if (u.hostname === 'localhost' || u.hostname === '127.0.0.1') return true;
+    return false;
+  } catch (e) {
+    return false;
+  }
+}
+
+// upgrade handler: perform origin check and route path '/ws'
+server.on('upgrade', (req, socket, head) => {
+  try {
+    const origin = req.headers.origin || req.headers['sec-websocket-origin'] || null;
+    // quick reject if origin not allowed
+    if (!isWsOriginAllowed(origin)) {
+      socket.write('HTTP/1.1 403 Forbidden\r\n\r\n');
+      socket.destroy();
+      console.warn('WS upgrade rejected - origin not allowed:', origin);
+      return;
+    }
+
+    const { url } = req;
+    // Only accept the intended path
+    if (!url || !url.startsWith('/ws')) {
+      socket.write('HTTP/1.1 404 Not Found\r\n\r\n');
+      socket.destroy();
+      return;
+    }
+
+    wss.handleUpgrade(req, socket, head, (ws) => {
+      wss.emit('connection', ws, req);
+    });
+  } catch (err) {
+    try { socket.destroy(); } catch (e) {}
+  }
+});
+
+// Heartbeat/ping-pong
+function noop() {}
+function heartbeat() { this.isAlive = true; }
+
+wss.on('connection', (ws, req) => {
+  ws.isAlive = true;
+  ws.on('pong', heartbeat);
+
+  // attempt to read token from querystring (non-blocking)
+  try {
+    const u = new URL(req.url, `http://localhost`);
+    ws._token = u.searchParams.get('token') || null;
+  } catch (e) {
+    ws._token = null;
+  }
+
+  console.info('WS client connected', { remote: req.socket.remoteAddress, origin: req.headers.origin });
+
+  ws.on('message', (raw) => {
+    try {
+      const text = raw.toString();
+      const obj = JSON.parse(text);
+      if (obj && obj.type === 'ping') {
+        ws.send(JSON.stringify({ type: 'pong', ts: Date.now() }));
+      }
+    } catch (err) {
+      // ignore malformed messages
+    }
+  });
 
   ws.on('close', () => {
-    console.log('WS client disconnected');
+    // nothing to do for now
+  });
+
+  ws.on('error', (err) => {
+    console.warn('WS client error', err && err.message);
+    try { ws.terminate(); } catch (e) {}
   });
 });
 
-// Helper: broadcast new invoice event to all connected WS clients
+// Periodically ping clients and clear dead sockets
+const wsInterval = setInterval(() => {
+  wss.clients.forEach((ws) => {
+    if (ws.isAlive === false) return ws.terminate();
+    ws.isAlive = false;
+    try { ws.ping(noop); } catch (e) { try { ws.terminate(); } catch (e2) {} }
+  });
+}, 30 * 1000);
+
+// Helper: broadcast new invoice event to all connected WS clients (safe JSON)
 function broadcastNewInvoice(invoice) {
   if (!invoice) return;
-  const payload = JSON.stringify({
-    type: 'invoice_created',
-    invoice,
-  });
-
+  const payload = JSON.stringify({ type: 'invoice_created', invoice });
   wss.clients.forEach((client) => {
     if (client.readyState === WebSocket.OPEN) {
-      client.send(payload);
+      try {
+        client.send(payload);
+      } catch (err) {
+        console.warn('failed to send ws message to client', err && err.message);
+      }
     }
   });
 }
+
+// Graceful cleanup if process exits
+process.on('SIGTERM', () => {
+  try { clearInterval(wsInterval); } catch (e) {}
+  try { wss.close(); } catch (e) {}
+});
 
 server.listen(PORT, () => {
   console.log(`API + WS listening on http://localhost:${PORT}`);

@@ -178,13 +178,134 @@ export default function POS() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // Multi-terminal sync: refresh catalog every 5 seconds
-  useEffect(() => {
-    const id = setInterval(() => {
-      loadProductsFromServer();
-    }, 5000); // 5s; tune as needed
+  // Multi-terminal sync: prefer WebSocket for live updates, fallback to polling only if WS cannot connect
+  const wsRef = useRef(null);
+  const wsReconnectRef = useRef({ attempt: 0, timer: null, shouldReconnect: true });
+  const lastRefreshRef = useRef(0); // debounces catalog refreshes (ms)
 
-    return () => clearInterval(id);
+  useEffect(() => {
+    let mounted = true;
+
+    function scheduleReconnect() {
+      if (!wsReconnectRef.current.shouldReconnect || !mounted) return;
+      const a = ++wsReconnectRef.current.attempt;
+      const delay = Math.min(30000, 1000 * Math.pow(2, Math.min(a, 6)));
+      wsReconnectRef.current.timer = setTimeout(() => {
+        if (mounted) connectWs();
+      }, delay);
+    }
+
+    function clearReconnect() {
+      if (wsReconnectRef.current.timer) {
+        clearTimeout(wsReconnectRef.current.timer);
+        wsReconnectRef.current.timer = null;
+      }
+      wsReconnectRef.current.attempt = 0;
+    }
+
+    function safeRefreshCatalog() {
+      // debounce rapid invoice events to at most once every 2s
+      const now = Date.now();
+      if (now - lastRefreshRef.current < 2000) return;
+      lastRefreshRef.current = now;
+      // keep it non-blocking
+      loadProductsFromServer().catch((err) => {
+        console.warn('catalog refresh after ws event failed', err);
+      });
+    }
+
+    function connectWs() {
+      try {
+        // close existing ws if any (avoid duplicate sockets)
+        try {
+          const prev = wsRef.current;
+          if (prev && prev.readyState !== WebSocket.CLOSED && prev.readyState !== WebSocket.CLOSING) {
+            wsReconnectRef.current.shouldReconnect = false; // temporarily stop reconnect while swapping
+            try { prev.close(); } catch (e) {}
+          }
+        } catch (e) { /* ignore */ }
+
+                const base = getApiBase(); // expected: full origin like "https://example.com" or "http://localhost:8080"
+        let origin = '';
+        try {
+          const parsed = new URL(base);
+          origin = parsed.origin; // keeps scheme+host+port
+        } catch (e) {
+          // fallback to current page origin
+          origin = (typeof window !== 'undefined' && window.location && window.location.origin) ? window.location.origin : '';
+        }
+
+        // choose proper ws scheme
+        const scheme = origin.startsWith('https:') ? 'wss:' : 'ws:';
+        const host = origin.replace(/^https?:/, ''); // //host[:port]
+
+        const token = localStorage.getItem('TOKEN') || localStorage.getItem('AUTH_TOKEN') || '';
+        const url = `${scheme}${host}/ws${token ? '?token=' + encodeURIComponent(token) : ''}`;
+
+        const ws = new WebSocket(url);
+        wsRef.current = ws;
+        // allow reconnects by default; will be reset on unmount
+        wsReconnectRef.current.shouldReconnect = true;
+
+        ws.onopen = () => {
+          console.info('POS: ws connected');
+          clearReconnect();
+          // reset attempt counter
+          wsReconnectRef.current.attempt = 0;
+        };
+
+        ws.onmessage = (evt) => {
+          try {
+            const msg = JSON.parse(evt.data);
+            if (!msg) return;
+
+            if (msg.type === 'invoice_created') {
+              // update lastInvoice if payload present
+              if (msg.invoice) {
+                try { setLastInvoice(msg.invoice); } catch (e) { /* ignore */ }
+              }
+              // debounce catalog refresh
+              safeRefreshCatalog();
+            }
+          } catch (err) {
+            console.warn('ws message parse error', err);
+          }
+        };
+
+        ws.onclose = (ev) => {
+          console.warn('POS: ws closed', ev && ev.code);
+          // Only schedule reconnect if we didn't intentionally close (e.g., unmount)
+          if (!mounted || !wsReconnectRef.current.shouldReconnect) return;
+          scheduleReconnect();
+        };
+
+        ws.onerror = (err) => {
+          console.warn('POS: ws error', err && err.message);
+          // close socket to trigger onclose and reconnect logic
+          try { ws.close(); } catch (e) {}
+        };
+      } catch (err) {
+        console.warn('POS: ws connect failed', err);
+        scheduleReconnect();
+      }
+    }
+
+    // Start WS connection
+    connectWs();
+
+    // Cleanup
+    return () => {
+      mounted = false;
+      try { wsReconnectRef.current.shouldReconnect = false; } catch (e) {}
+      try {
+        if (wsRef.current) {
+          try { wsRef.current.close(); } catch (e) {}
+          wsRef.current = null;
+        }
+      } catch (e) {}
+      clearReconnect();
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   // Focus search on first load for quick keyboard billing
