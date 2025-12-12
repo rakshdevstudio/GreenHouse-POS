@@ -70,12 +70,49 @@ const isLoggedIn = isStoreLoggedIn || isAdminLoggedIn || isOverlayAdmin;
       }
     }
 
+    // Initial ping
     ping();
-    const id = setInterval(ping, 30000);
+
+    // Only ping while page is visible to avoid background storming when app is open in multiple tabs
+    // Use a slightly longer default interval (60s) and skip pings while document is hidden.
+    let id = null;
+
+    function schedulePing() {
+      if (id) clearInterval(id);
+      id = setInterval(() => {
+        try {
+          if (typeof document !== 'undefined' && document.hidden) {
+            // tab in background — skip this cycle
+            return;
+          }
+          ping();
+        } catch (err) {
+          // swallow errors to avoid breaking the timer loop
+          console.warn('ping loop error', err);
+        }
+      }, 60000); // 60s
+    }
+
+    // Ping immediately and then start scheduled pings
+    schedulePing();
+
+    // When user returns to the tab, do one immediate ping (but throttle to avoid rapid repeats)
+    let lastImmediatePing = 0;
+    function handleVisibility() {
+      if (typeof document !== 'undefined' && !document.hidden) {
+        const now = Date.now();
+        if (now - lastImmediatePing > 5000) {
+          lastImmediatePing = now;
+          ping();
+        }
+      }
+    }
+    document.addEventListener('visibilitychange', handleVisibility);
 
     return () => {
       cancelled = true;
-      clearInterval(id);
+      if (id) clearInterval(id);
+      document.removeEventListener('visibilitychange', handleVisibility);
     };
   }, []);
 

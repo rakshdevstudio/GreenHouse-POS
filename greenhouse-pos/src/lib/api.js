@@ -31,6 +31,11 @@ export function getApiBase() {
 /* ------------------------------------------------------------------ */
 /*  Low-level fetch wrapper                                           */
 /* ------------------------------------------------------------------ */
+// Request dedupe + short in-memory GET cache to avoid rapid identical fetch storms
+const __INFLIGHT_REQS = {}; // key -> Promise
+const __GET_CACHE = {}; // key -> { ts, value }
+const __GET_CACHE_TTL = 10000; // ms - short TTL to coalesce bursts
+
 async function call(path, opts = {}) {
   const url = `${API_BASE}${path}`;
   const headers = Object.assign({}, opts.headers || {});
@@ -43,15 +48,10 @@ async function call(path, opts = {}) {
   // Attach store/admin token if present
   let token;
   if (path.startsWith("/admin")) {
-    // For admin endpoints, use ADMIN_TOKEN only
     token = localStorage.getItem("ADMIN_TOKEN");
   } else {
-    // For normal POS/store endpoints, prefer STORE_TOKEN, fall back to ADMIN_TOKEN
-    token =
-      localStorage.getItem("STORE_TOKEN") ||
-      localStorage.getItem("ADMIN_TOKEN");
+    token = localStorage.getItem("STORE_TOKEN") || localStorage.getItem("ADMIN_TOKEN");
   }
-
   if (token) {
     headers["Authorization"] = `Bearer ${token}`;
   }
@@ -63,32 +63,78 @@ async function call(path, opts = {}) {
   };
 
   if (opts.body) {
-    fetchOpts.body =
-      typeof opts.body === "string" ? opts.body : JSON.stringify(opts.body);
+    fetchOpts.body = typeof opts.body === "string" ? opts.body : JSON.stringify(opts.body);
   }
 
-  const res = await fetch(url, fetchOpts);
+  // --- Simple GET dedupe + short cache ---
+  const isGet = (!fetchOpts.method || fetchOpts.method.toUpperCase() === "GET");
+  const dedupeKey = isGet ? `${fetchOpts.method || 'GET'}::${url}` : null;
 
-  if (!res.ok) {
-    let errText;
+  if (isGet) {
+    // Return cached value if still fresh
     try {
-      const j = await res.json();
-      errText = j.error || j.message || JSON.stringify(j);
-    } catch (_) {
-      try {
-        errText = await res.text();
-      } catch {
-        errText = `status ${res.status}`;
+      const cached = __GET_CACHE[dedupeKey];
+      if (cached && Date.now() - cached.ts < __GET_CACHE_TTL) {
+        return cached.value;
       }
+    } catch (e) { /* ignore cache read errors */ }
+
+    // If an identical request is already in flight, return its promise
+    if (__INFLIGHT_REQS[dedupeKey]) {
+      return __INFLIGHT_REQS[dedupeKey];
     }
-    const e = new Error(errText || `HTTP ${res.status}`);
-    e.status = res.status;
-    throw e;
   }
 
-  const contentType = res.headers.get("content-type") || "";
-  if (contentType.includes("application/json")) return res.json();
-  return res.text();
+  // Perform fetch and wrap response handling in a promise
+  const p = (async () => {
+    const res = await fetch(url, fetchOpts);
+
+    if (!res.ok) {
+      let errText;
+      try {
+        const j = await res.json();
+        errText = j.error || j.message || JSON.stringify(j);
+      } catch (_) {
+        try {
+          errText = await res.text();
+        } catch {
+          errText = `status ${res.status}`;
+        }
+      }
+      const e = new Error(errText || `HTTP ${res.status}`);
+      e.status = res.status;
+      throw e;
+    }
+
+    const contentType = res.headers.get("content-type") || "";
+    if (contentType.includes("application/json")) {
+      const json = await res.json();
+      if (isGet) {
+        try {
+          __GET_CACHE[dedupeKey] = { ts: Date.now(), value: json };
+        } catch (e) { /* noop */ }
+      }
+      return json;
+    }
+
+    const text = await res.text();
+    if (isGet) {
+      try {
+        __GET_CACHE[dedupeKey] = { ts: Date.now(), value: text };
+      } catch (e) { /* noop */ }
+    }
+    return text;
+  })();
+
+  // Track inflight for GET dedupe and clean up afterwards
+  if (isGet) {
+    __INFLIGHT_REQS[dedupeKey] = p;
+    p.finally(() => {
+      try { delete __INFLIGHT_REQS[dedupeKey]; } catch (e) {}
+    });
+  }
+
+  return p;
 }
 
 /* ------------------------------------------------------------------ */
