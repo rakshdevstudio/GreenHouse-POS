@@ -5,7 +5,9 @@
   "main": "index.js",
   "scripts": {
     "start": "node index.js",
-    "dev": "nodemon index.js"
+    "dev": "nodemon index.js",
+    "install_frontend": "cd greenhouse-pos && npm ci --include=dev",
+    "build": "cd greenhouse-pos && npm run build"
   },
   "keywords": [],
   "author": "",
