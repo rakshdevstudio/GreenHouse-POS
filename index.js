@@ -42,14 +42,15 @@ const ALLOWED_ORIGINS_ARRAY = [
     'http://127.0.0.1:5174',
     'https://greenhouse-pos-production.up.railway.app', 
     'https://green-house-pos.vercel.app', 
-    /https:\/\/[^/]*\.vercel\.app$/, // Regex pattern for Vercel subdomains
+    /https:\/\/[^/]*\.vercel\.app$/, 
 ];
 
 // Combine the list of exact origins and the dynamic Vercel regex
 const allowed = [...ALLOWED_EXACT_ORIGINS, /https:\/\/[^/]*\.vercel\.app$/];
 
 app.use(require('cors')({
-    // Replace the entire custom 'origin' function with the array variable:
+    // CRITICAL FIX: The cors library will now use its internal, tested logic 
+    // to check the array, bypassing your bug-prone custom function.
     origin: ALLOWED_ORIGINS_ARRAY, 
     
     credentials: true,
