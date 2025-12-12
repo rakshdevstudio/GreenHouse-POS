@@ -26,53 +26,47 @@ if (process.env.MOCK_SCALE === '1') {
 }
 
 // --- CORS: friendly dev defaults ---
-// Allow Vite dev servers on 5173 and 5174 and also allow non-browser requests (curl, server-side).
-// In production you should change this to your exact frontend origin(s).
-// --- CORS: friendly dev defaults ---
-// Allow Vite dev servers, plus the production domains needed on Railway.
-// ----------------------------------------------------
-// CRITICAL CORS PATCH: Replace the faulty block (Around lines 30-54)
-// ----------------------------------------------------
+// Allow Vite dev servers on 5173 and 5174 and also allow non-browser requests (curl, server-to-server).
+// In production we require explicit origins (no wildcard) to allow credentials.
 
-// Explicit list of allowed domains (includes development and production Railway URL)
 const ALLOWED_ORIGINS_ARRAY = [
-    'http://localhost:5173',
-    'http://127.0.0.1:5173',
-    'http://localhost:5174',
-    'http://127.0.0.1:5174',
-    'https://greenhouse-pos-production.up.railway.app', 
-    'https://green-house-pos.vercel.app', 
-    /https:\/\/[^/]*\.vercel\.app$/, 
+  // 1. Localhost/Development Domains
+  'http://localhost:5173',
+  'http://127.0.0.1:5173',
+  'http://localhost:5174',
+  'http://127.0.0.1:5174',
+  'http://localhost:5175',
+
+  // 2. Explicit Frontend/Client Domains (Vercel)
+  'https://green-house-pos.vercel.app',
+
+  // 3. Explicit Backend Domains (Railway/Direct Access)
+  'https://greenhouse-pos-production.up.railway.app',
+  'https://greenhouse-pos-frontend-production.up.railway.app',
+
+  // 4. Dynamic/Regex Domain for Vercel Subdomains (e.g., preview environments)
+  /https:\/\/[^/]*\.vercel\.app$/,
 ];
 
-// Combine the list of exact origins and the dynamic Vercel regex
-const allowed = [...ALLOWED_EXACT_ORIGINS, /https:\/\/[^/]*\.vercel\.app$/];
-
-app.use(require('cors')({
-    // CRITICAL FIX: The cors library will now use its internal, tested logic 
-    // to check the array, bypassing your bug-prone custom function.
-    origin: ALLOWED_ORIGINS_ARRAY, 
-    
-    credentials: true,
-    methods: ['GET', 'POST', 'PATCH', 'PUT', 'DELETE', 'OPTIONS'],
-    allowedHeaders: ['Content-Type', 'Authorization', 'Accept', 'X-Requested-With'],
-}));
-// ----------------------------------------------------
+// allow adding extra origins from an environment variable on Railway (comma-separated list)
+if (process.env.FRONTEND_ORIGIN) {
+  const extras = String(process.env.FRONTEND_ORIGIN)
+    .split(',')
+    .map((s) => s.trim())
+    .filter(Boolean);
+  for (const e of extras) ALLOWED_ORIGINS_ARRAY.push(e);
+}
 
 app.use(cors({
-  origin: function(origin, callback) {
-    // allow requests with no origin (curl, mobile apps, server-to-server)
-    if (!origin) return callback(null, true);
-    if (allowedOrigins.has(origin)) return callback(null, true);
-    return callback(new Error('CORS not allowed for origin ' + origin));
-  },
-  methods: ['GET','POST','PATCH','PUT','DELETE','OPTIONS'],
-  credentials: true
+  origin: ALLOWED_ORIGINS_ARRAY,
+  credentials: true,
+  methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
+  allowedHeaders: ['Content-Type', 'Authorization', 'Accept', 'X-Requested-With'],
 }));
 
 app.use(express.json());
 
-const PORT = process.env.PORT || 3000;
+const PORT = process.env.PORT || 8080;
 const pool = new Pool({
   connectionString: process.env.DATABASE_URL,
   ssl: { rejectUnauthorized: false }
