@@ -28,12 +28,46 @@ if (process.env.MOCK_SCALE === '1') {
 // --- CORS: friendly dev defaults ---
 // Allow Vite dev servers on 5173 and 5174 and also allow non-browser requests (curl, server-side).
 // In production you should change this to your exact frontend origin(s).
+// --- CORS: friendly dev defaults ---
+// Allow Vite dev servers, plus the production domains needed on Railway.
 const allowedOrigins = new Set([
-  'http://localhost:5173',
-  'http://127.0.0.1:5173',
-  'http://localhost:5174',
-  'http://127.0.0.1:5174'
+  'http://localhost:5173',
+  'http://127.0.0.1:5173',
+  'http://localhost:5174',
+  'http://127.0.0.1:5174',
+  
+  // CRITICAL FIX: Add your deployment origins here
+  'https://green-house-pos.vercel.app', 
+  'https://greenhouse-pos-production.up.railway.app',
+  // Allow any Vercel preview domain dynamically
+  /https:\/\/[^/]*\.vercel\.app$/, // Regex for *.vercel.app subdomains
+  // Allow Railway private domain for internal calls if needed (though usually not necessary for CORS)
+  'https://greenhouse-pos.railway.internal' 
 ]);
+
+app.use(cors({
+  origin: function(origin, callback) {
+    // allow requests with no origin (curl, mobile apps, server-to-server)
+    if (!origin) return callback(null, true);
+    
+    // Check against the set of allowed origins (including the new domains)
+    if (allowedOrigins.has(origin)) return callback(null, true);
+
+    // Check against the regex for *.vercel.app subdomains
+    let isAllowedByRegex = false;
+    for (const allowedOrigin of allowedOrigins) {
+      if (allowedOrigin instanceof RegExp && allowedOrigin.test(origin)) {
+        isAllowedByRegex = true;
+        break;
+      }
+    }
+    if (isAllowedByRegex) return callback(null, true);
+
+    return callback(new Error('CORS not allowed for origin ' + origin));
+  },
+  methods: ['GET','POST','PATCH','PUT','DELETE','OPTIONS'],
+  credentials: true
+}));
 
 app.use(cors({
   origin: function(origin, callback) {
