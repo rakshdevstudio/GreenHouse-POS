@@ -225,7 +225,35 @@ app.get('/admin/stores', requireAdmin, async (req, res) => {
     return res.status(500).json({ error: 'server error' });
   }
 });
+// ---- Scale input endpoint (from local scale bridge) ----
+// This endpoint is called by scale-bridge.exe running on the Windows machine.
+// It receives weight from the physical weighing scale and emits it
+// to SSE + WebSocket listeners via scaleEmitter.
+let latestWeight = null;
 
+app.post('/scale/weight', (req, res) => {
+  const w = Number(req.body && req.body.weight_kg);
+
+  if (!Number.isFinite(w) || w <= 0) {
+    return res.status(400).json({ error: 'weight_kg missing or invalid' });
+  }
+
+  // keep a cached copy
+  latestWeight = Number(w.toFixed(4));
+
+  // broadcast to all listeners (SSE / WS)
+  scaleEmitter.emit('weight', latestWeight);
+
+  // optional log for verification on Railway
+  console.log('⚖️ Scale weight received:', latestWeight);
+
+  return res.json({ ok: true, weight_kg: latestWeight });
+});
+
+// Optional pull-style endpoint (for polling fallback)
+app.get('/scale/latest', (req, res) => {
+  res.json({ weight_kg: latestWeight });
+});
 // ---- Scale live stream (SSE) ----
 app.get('/scale/stream', (req, res) => {
   res.setHeader('Content-Type', 'text/event-stream');
