@@ -5,7 +5,6 @@ import api from "../lib/api";
 export default function Login() {
   const [username, setUsername] = useState("store1");
   const [password, setPassword] = useState("");
-  const [terminalUuid, setTerminalUuid] = useState("term-web-01");
   const [error, setError] = useState(null);
   const [loading, setLoading] = useState(false);
 
@@ -28,7 +27,6 @@ export default function Login() {
       const res = await api.loginStore({
         username,
         password,
-        terminal_uuid: terminalUuid,
       });
 
       // api.loginStore already stores STORE_TOKEN & STORE_ID,
@@ -108,30 +106,9 @@ export default function Login() {
                 required
               />
             </label>
-
-            <label className="form-label">
-              Terminal UUID
-              <input
-                className="pos-input"
-                type="text"
-                value={terminalUuid}
-                onChange={(e) => setTerminalUuid(e.target.value)}
-                required
-              />
-              <span className="login-field-hint">
-                Example: <code>term-counter-01</code>
-              </span>
-            </label>
           </div>
 
           <div className="login-actions">
-            <div className="login-remember">
-              <span className="login-remember-title">Tip</span>
-              <span className="login-remember-text">
-                Use a unique terminal ID per counter to track sales by counter.
-              </span>
-            </div>
-
             <button
               type="submit"
               className="btn-primary login-submit-btn"
