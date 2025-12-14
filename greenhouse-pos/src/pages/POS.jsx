@@ -412,48 +412,62 @@
     }, [focusQtyForId, cart.length]);
 
     // Subscribe to weighing scale stream (SSE)
+    // NOTE:
+    // - Browser CANNOT read COM ports directly.
+    // - We read weight from a LOCAL Node bridge (http://localhost:3001)
+    // - The bridge exposes /scale/stream (SSE)
+    // - This POS just listens to that stream.
     useEffect(() => {
-    const base = getApiBase();
-    const url = `${base}/scale/stream`;
-    let ev;
+      // Priority:
+      // 1) Explicit local override (for client machines)
+      // 2) API base (cloud)
+      // 3) Fallback localhost
+      const localScaleBase =
+        localStorage.getItem("SCALE_BASE") ||
+        (typeof window !== "undefined" && window.SCALE_BASE) ||
+        "http://localhost:3001";
 
-    try {
-      ev = new EventSource(url);
+      const url = `${localScaleBase}/scale/stream`;
+      let ev;
 
-      ev.onmessage = (event) => {
-        console.debug('POS: scale SSE message', event.data);
-        if (!event.data) return;
-        try {
-          const data = JSON.parse(event.data);
-          if (data.weight_kg == null) return;
+      console.info("POS: connecting to scale SSE:", url);
 
-          const w = Number(data.weight_kg);
-          if (!Number.isFinite(w) || w <= 0) return;
+      try {
+        ev = new EventSource(url);
 
-          // Keep 4 decimal places but strip trailing zeros for display.
-          const formatted = w.toFixed(4).replace(/0+$/, "").replace(/\.$/, "");
-          setWeightKg(formatted);
-        } catch (err) {
-          console.warn("scale/stream parse error", err);
-        }
-      };
+        ev.onmessage = (event) => {
+          if (!event.data) return;
 
-      ev.onerror = (err) => {
-        console.warn("scale/stream error", err);
-        // Optional: close on error so it doesn't hammer logs
-        // ev.close();
-      };
-    } catch (err) {
-      console.warn("EventSource init error", err);
-    }
+          try {
+            const data = JSON.parse(event.data);
+            if (data.weight_kg == null) return;
 
-    // cleanup on unmount or effect re-run
-    return () => {
-      if (ev) {
-        ev.close();
+            const w = Number(data.weight_kg);
+            if (!Number.isFinite(w) || w <= 0) return;
+
+            // Keep 4 decimals, strip trailing zeros
+            const formatted = w
+              .toFixed(4)
+              .replace(/0+$/, "")
+              .replace(/\.$/, "");
+
+            setWeightKg(formatted);
+          } catch (err) {
+            console.warn("POS: scale parse error", err, event.data);
+          }
+        };
+
+        ev.onerror = (err) => {
+          console.warn("POS: scale SSE error", err);
+        };
+      } catch (err) {
+        console.warn("POS: scale EventSource init failed", err);
       }
-    };
-  }, []); // 👈 VERY IMPORTANT: empty deps, so it runs only once (per mount)
+
+      return () => {
+        if (ev) ev.close();
+      };
+    }, []);
 
     // Dev helper: allow mocking the scale from browser console
     useEffect(() => {
