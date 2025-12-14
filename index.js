@@ -72,7 +72,7 @@ app.use(cors({
 
     return callback(new Error('CORS not allowed: ' + origin));
   },
-  credentials: false,
+  credentials: true,
   methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
   allowedHeaders: ['Content-Type', 'Authorization', 'Accept', 'X-Requested-With'],
 }));
