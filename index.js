@@ -1332,7 +1332,21 @@ app.post('/invoices', requireStoreOrAdmin, async (req, res) => {
 
     const taxAmount = +parseFloat(tax || 0).toFixed(2);
     const total = +(subtotal + taxAmount).toFixed(2);
-    const invoice_no = `INV-${Date.now()}`;
+
+    // --- Per-store invoice number sequence ---
+    const seqRes = await client.query(
+      `INSERT INTO store_invoice_counters (store_id, last_invoice_no)
+       VALUES ($1, 1)
+       ON CONFLICT (store_id)
+       DO UPDATE
+         SET last_invoice_no = store_invoice_counters.last_invoice_no + 1,
+             updated_at = now()
+       RETURNING last_invoice_no`,
+      [store_id]
+    );
+
+    const nextNo = seqRes.rows[0].last_invoice_no;
+    const invoice_no = `INV-${store_id}-${String(nextNo).padStart(5, '0')}`;
 
     // Insert invoice
     const insertInv = await client.query(
