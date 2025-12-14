@@ -58,8 +58,21 @@ if (process.env.FRONTEND_ORIGIN) {
 }
 
 app.use(cors({
-  origin: ALLOWED_ORIGINS_ARRAY,
-  credentials: true,
+  origin: (origin, callback) => {
+    // Allow Electron (file:// or null origin)
+    if (!origin || origin === 'null') {
+      return callback(null, true);
+    }
+
+    // Allow known origins + vercel previews
+    for (const o of ALLOWED_ORIGINS_ARRAY) {
+      if (typeof o === 'string' && o === origin) return callback(null, true);
+      if (o instanceof RegExp && o.test(origin)) return callback(null, true);
+    }
+
+    return callback(new Error('CORS not allowed: ' + origin));
+  },
+  credentials: false,
   methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
   allowedHeaders: ['Content-Type', 'Authorization', 'Accept', 'X-Requested-With'],
 }));

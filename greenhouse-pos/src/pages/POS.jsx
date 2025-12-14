@@ -411,17 +411,32 @@
       setFocusQtyForId(null);
     }, [focusQtyForId, cart.length]);
 
-    // Subscribe to weighing scale stream (SSE)
-    // NOTE:
-    // - Browser CANNOT read COM ports directly.
-    // - We read weight from a LOCAL Node bridge (http://localhost:3001)
-    // - The bridge exposes /scale/stream (SSE)
-    // - This POS just listens to that stream.
+    // Subscribe to weighing scale stream (Electron or browser SSE)
     useEffect(() => {
-      // Priority:
-      // 1) Explicit local override (for client machines)
-      // 2) API base (cloud)
-      // 3) Fallback localhost
+      // If running inside Electron, listen to injected scale data
+      if (typeof window !== "undefined" && window.scale && window.scale.onData) {
+        console.info("POS: using Electron scale bridge");
+
+        window.scale.onData((raw) => {
+          // raw is ASCII string from serial
+          const match = raw.match(/([0-9]+(\.[0-9]+)?)/);
+          if (!match) return;
+
+          const w = Number(match[1]);
+          if (!Number.isFinite(w) || w <= 0) return;
+
+          const formatted = w
+            .toFixed(4)
+            .replace(/0+$/, "")
+            .replace(/\.$/, "");
+
+          setWeightKg(formatted);
+        });
+
+        return;
+      }
+
+      // Browser fallback: listen to local Node scale bridge (SSE)
       const localScaleBase =
         localStorage.getItem("SCALE_BASE") ||
         (typeof window !== "undefined" && window.SCALE_BASE) ||
@@ -445,7 +460,6 @@
             const w = Number(data.weight_kg);
             if (!Number.isFinite(w) || w <= 0) return;
 
-            // Keep 4 decimals, strip trailing zeros
             const formatted = w
               .toFixed(4)
               .replace(/0+$/, "")
@@ -910,6 +924,19 @@
 
         setLastInvoice(invoice);
         setCheckoutStatus("success");
+
+        // 🔥 Auto-print immediately after checkout (Electron / Desktop)
+        setTimeout(() => {
+          try {
+            if (window.electron && window.electron.print) {
+              window.electron.print();
+            } else {
+              window.print(); // browser fallback
+            }
+          } catch (e) {
+            console.warn("Auto print failed", e);
+          }
+        }, 300);
 
         // After success, move keyboard focus to the Print button so cashier can simply press Enter
         setTimeout(() => {
@@ -1450,7 +1477,7 @@
           type="button"
           className="btn-ghost receipt-print-btn"
           ref={lastInvoicePrintBtnRef}
-          onClick={() => window.print()}
+          style={{ display: "none" }}
         >
           Print
         </button>
