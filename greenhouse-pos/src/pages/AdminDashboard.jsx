@@ -49,7 +49,11 @@ export default function AdminDashboard({ onOpenStoreTab }) {
             store_id: store.id,
             date: dateStr,
           });
-          statsEntries.push([store.id, rep]);
+          const normalized =
+            rep?.totals ||
+            (Array.isArray(rep) ? rep[0] : rep) ||
+            {};
+          statsEntries.push([store.id, { totals: normalized }]);
         } catch (e) {
           console.error("daily report failed for store", store.id, e);
           statsEntries.push([store.id, null]);
