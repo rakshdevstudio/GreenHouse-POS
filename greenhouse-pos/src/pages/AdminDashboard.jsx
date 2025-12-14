@@ -49,26 +49,18 @@ export default function AdminDashboard({ onOpenStoreTab }) {
             store_id: store.id,
             date: dateStr,
           });
-          // Explicit normalization based on actual backend response fields
-          const src = Array.isArray(rep) ? rep[0] : rep || {};
+          // Correct normalization that matches backend shape:
+          // { store_id, date, totals: { invoice_count, total, ... } }
+          const src = rep || {};
+          const t = src.totals || {};
+
+          const invoiceCount = Number(t.invoice_count || 0);
+          const total = Number(t.total || 0);
 
           const normalized = {
-            invoice_count:
-              src.invoice_count ??
-              src.invoices ??
-              src.count ??
-              0,
-
-            total:
-              src.total ??
-              src.total_amount ??
-              src.revenue ??
-              0,
-
-            avg_invoice_value:
-              src.avg_invoice_value ??
-              src.avg ??
-              (src.invoice_count ? src.total / src.invoice_count : 0),
+            invoice_count: invoiceCount,
+            total: total,
+            avg_invoice_value: invoiceCount ? total / invoiceCount : 0,
           };
 
           statsEntries.push([store.id, { totals: normalized }]);
