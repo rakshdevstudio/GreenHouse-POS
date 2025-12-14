@@ -62,16 +62,7 @@ export default function Login() {
           </div>
         </header>
 
-        {/* Small hint row */}
-        <div className="login-hint-row">
-          <div className="login-hint-main">
-            <span className="login-hint-label">Demo credentials</span>
-            <span className="login-hint-value">store1 / store1pass</span>
-          </div>
-          <div className="login-hint-sub">
-            Terminal ID will identify this counter in reports.
-          </div>
-        </div>
+
 
         {error && (
           <div className="error-box" style={{ marginBottom: 12 }}>
