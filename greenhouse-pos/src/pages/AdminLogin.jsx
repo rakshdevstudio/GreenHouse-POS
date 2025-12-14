@@ -45,16 +45,6 @@ export default function AdminLogin({ onLoggedIn }) {
           </span>
         </div>
 
-        {/* Demo credentials hint */}
-        <div className="admin-login-hint-row">
-          <div className="admin-login-hint-main">
-            <span className="admin-login-hint-label">Demo admin</span>
-            <span className="admin-login-hint-value">admin / adminpass</span>
-          </div>
-          <div className="admin-login-hint-sub">
-            Change this password before going live. Admin can see every store.
-          </div>
-        </div>
 
         {/* Error box */}
         {error && (
