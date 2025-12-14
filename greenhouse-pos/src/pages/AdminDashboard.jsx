@@ -49,10 +49,28 @@ export default function AdminDashboard({ onOpenStoreTab }) {
             store_id: store.id,
             date: dateStr,
           });
-          const normalized =
-            rep?.totals ||
-            (Array.isArray(rep) ? rep[0] : rep) ||
-            {};
+          // Explicit normalization based on actual backend response fields
+          const src = Array.isArray(rep) ? rep[0] : rep || {};
+
+          const normalized = {
+            invoice_count:
+              src.invoice_count ??
+              src.invoices ??
+              src.count ??
+              0,
+
+            total:
+              src.total ??
+              src.total_amount ??
+              src.revenue ??
+              0,
+
+            avg_invoice_value:
+              src.avg_invoice_value ??
+              src.avg ??
+              (src.invoice_count ? src.total / src.invoice_count : 0),
+          };
+
           statsEntries.push([store.id, { totals: normalized }]);
         } catch (e) {
           console.error("daily report failed for store", store.id, e);
