@@ -45,15 +45,10 @@ export default function AdminDashboard({ onOpenStoreTab }) {
 
       for (const store of list) {
         try {
-          // Impersonate this store so /reports/daily-sales runs in its context
-          if (api.adminImpersonateStore) {
-            await api.adminImpersonateStore(store.id);
-          }
-
-          const rep = await api.getDailySalesReport({
+          const rep = await api.adminGetDailySalesReport({
+            store_id: store.id,
             date: dateStr,
           });
-
           statsEntries.push([store.id, rep]);
         } catch (e) {
           console.error("daily report failed for store", store.id, e);
