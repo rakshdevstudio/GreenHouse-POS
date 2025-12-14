@@ -1906,6 +1906,64 @@ app.get('/reports/daily-sales', requireStoreOrAdmin, async (req, res) => {
     return res.status(500).json({ error: 'server error' });
   }
 });
+/**
+ * Admin alias for daily sales
+ * Frontend AdminDashboard calls /admin/reports/daily-sales
+ * This proxies to the same logic as /reports/daily-sales
+ */
+app.get('/admin/reports/daily-sales', requireAdmin, async (req, res) => {
+  try {
+    const storeId = parseInt(req.query.store_id, 10);
+    const dateStr = req.query.date;
+
+    if (!storeId) {
+      return res.status(400).json({ error: 'store_id required' });
+    }
+    if (!dateStr) {
+      return res.status(400).json({ error: 'date (YYYY-MM-DD) required' });
+    }
+
+    const summarySql = `
+      SELECT
+        COUNT(*)::int AS invoice_count,
+        COALESCE(SUM(total - tax),0)::numeric(12,2) AS subtotal_sales,
+        COALESCE(SUM(tax),0)::numeric(12,2)         AS total_tax,
+        COALESCE(SUM(total),0)::numeric(12,2)       AS total_sales
+      FROM invoices
+      WHERE store_id = $1
+        AND status <> 'voided'
+        AND created_at::date = $2::date
+    `;
+
+    const r = await pool.query(summarySql, [storeId, dateStr]);
+    const s = r.rows[0] || {
+      invoice_count: 0,
+      subtotal_sales: 0,
+      total_tax: 0,
+      total_sales: 0,
+    };
+
+    const invoiceCount = Number(s.invoice_count || 0);
+    const subtotal = Number(s.subtotal_sales || 0);
+    const tax = Number(s.total_tax || 0);
+    const total = Number(s.total_sales || 0);
+
+    return res.json({
+      store_id: storeId,
+      date: dateStr,
+      totals: {
+        invoice_count: invoiceCount,
+        subtotal,
+        tax,
+        total,
+        avg_invoice_value: invoiceCount ? total / invoiceCount : 0,
+      },
+    });
+  } catch (err) {
+    console.error('admin daily-sales error', err);
+    return res.status(500).json({ error: 'server error' });
+  }
+});
 // --- NOTE: one-time SQL to create the monthly_reports table ---
 // Run this in your database (psql / Neon SQL console):
 //
