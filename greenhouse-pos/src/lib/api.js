@@ -308,7 +308,7 @@ async function getDailySalesReport(params = {}) {
   if (params.store_id != null) query.set("store_id", String(params.store_id));
   if (params.date) query.set("date", params.date);
   const qs = query.toString();
-  return call(`/reports/daily-sales?${qs}`);
+  return call(`/admin/reports/daily-sales?${qs}`);
 }
 
 // GET /reports/monthly?store_id=1&year=2025&month=12
