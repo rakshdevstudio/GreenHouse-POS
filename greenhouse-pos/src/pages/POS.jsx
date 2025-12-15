@@ -418,6 +418,11 @@
         console.info("POS: using Electron scale bridge");
 
         window.scale.onData((raw) => {
+          // Only auto-fill when a product is selected for weighing
+          if (!activeProduct) return;
+
+          console.log("📟 Scale raw data:", raw);
+
           // raw is ASCII string from serial
           const match = raw.match(/([0-9]+(\.[0-9]+)?)/);
           if (!match) return;
