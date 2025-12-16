@@ -1,9 +1,11 @@
 const { app, BrowserWindow, ipcMain } = require("electron");
 const path = require("path");
 const { SerialPort } = require("serialport");
+const { autoUpdater } = require("electron-updater");
 
 let mainWindow = null;
 let scalePort = null;
+let isDev = !app.isPackaged;
 
 function createWindow() {
   mainWindow = new BrowserWindow({
@@ -23,7 +25,32 @@ function createWindow() {
   mainWindow.once("ready-to-show", () => {
     mainWindow.show();
   });
+
+  if (!isDev) {
+    autoUpdater.checkForUpdatesAndNotify();
+  }
 }
+
+autoUpdater.on("checking-for-update", () => {
+  console.log("🔄 Checking for update...");
+});
+
+autoUpdater.on("update-available", () => {
+  console.log("⬇️ Update available, downloading...");
+});
+
+autoUpdater.on("update-not-available", () => {
+  console.log("✅ App is up to date");
+});
+
+autoUpdater.on("error", (err) => {
+  console.error("❌ Auto-update error:", err);
+});
+
+autoUpdater.on("update-downloaded", () => {
+  console.log("🚀 Update downloaded, restarting...");
+  autoUpdater.quitAndInstall();
+});
 
 ipcMain.handle("print-receipt", async () => {
   if (!mainWindow) return { ok: false };
@@ -93,6 +120,8 @@ app.whenReady().then(() => {
       createWindow();
     }
   });
+
+  if (!isDev) autoUpdater.checkForUpdates();
 });
 
 app.on("window-all-closed", () => {
