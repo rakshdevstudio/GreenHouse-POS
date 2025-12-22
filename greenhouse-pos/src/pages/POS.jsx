@@ -418,16 +418,18 @@
         console.info("POS: using Electron scale bridge");
 
         window.scale.onData((raw) => {
-          // Only auto-fill when a product is selected for weighing
-          if (!activeProduct) return;
-
           console.log("📟 Scale raw data:", raw);
 
-          // raw is ASCII string from serial
-          const match = raw.match(/([0-9]+(\.[0-9]+)?)/);
-          if (!match) return;
+          // Normalize serial input (Essae / noisy serial formats)
+          const cleaned = raw
+            .replace(/[^\d.]/g, " ")
+            .split(" ")
+            .filter(Boolean)
+            .pop();
 
-          const w = Number(match[1]);
+          if (!cleaned) return;
+
+          const w = Number(cleaned);
           if (!Number.isFinite(w) || w <= 0) return;
 
           const formatted = w
@@ -486,7 +488,7 @@
       return () => {
         if (ev) ev.close();
       };
-    }, []);
+    }, [activeProduct]);
 
     // Dev helper: allow mocking the scale from browser console
     useEffect(() => {
