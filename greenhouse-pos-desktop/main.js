@@ -69,45 +69,68 @@ ipcMain.handle("print-receipt", async () => {
 
 async function initScale() {
   try {
+    console.log("🔍 Scanning serial ports...");
     const ports = await SerialPort.list();
+    console.table(ports);
 
-    if (!ports.length) {
-      console.error("❌ No COM ports found");
-      return;
+    // Essae / motherboard serial is almost always COM1
+    let portPath = "COM1";
+
+    // If COM1 not present, fall back
+    if (!ports.find(p => p.path === "COM1") && ports.length > 0) {
+      portPath = ports[0].path;
     }
 
-    // Prefer USB / Serial scale ports automatically
-    const preferred =
-      ports.find(p =>
-        (p.manufacturer || "").toLowerCase().includes("usb") ||
-        (p.friendlyName || "").toLowerCase().includes("usb") ||
-        (p.path || "").toLowerCase().includes("com")
-      ) || ports[0];
-
-    console.log("🔌 Using scale port:", preferred.path);
+    console.log("🔌 Using scale port:", portPath);
 
     scalePort = new SerialPort({
-      path: preferred.path,
+      path: portPath,
       baudRate: 9600,
       dataBits: 8,
       stopBits: 1,
       parity: "none",
-      autoOpen: true,
+      autoOpen: false,
     });
 
-    scalePort.on("data", (data) => {
-      if (!mainWindow) return;
-      const raw = data.toString();
-      mainWindow.webContents.send("scale-data", raw);
+    scalePort.open(err => {
+      if (err) {
+        console.error("❌ Failed to open scale port:", err.message);
+        setTimeout(initScale, 3000);
+        return;
+      }
+      console.log("✅ Scale connected");
     });
 
-    scalePort.on("error", (err) => {
+    let buffer = "";
+
+    scalePort.on("data", data => {
+      buffer += data.toString("utf8");
+
+      if (!buffer.includes("\n")) return;
+
+      const lines = buffer.split(/\r?\n/);
+      buffer = lines.pop();
+
+      for (const line of lines) {
+        console.log("📟 SCALE RAW:", line);
+        if (mainWindow) {
+          mainWindow.webContents.send("scale-data", line);
+        }
+      }
+    });
+
+    scalePort.on("error", err => {
       console.error("❌ Scale error:", err.message);
     });
 
-    console.log(`✅ Scale connected on ${preferred.path}`);
+    scalePort.on("close", () => {
+      console.warn("⚠️ Scale disconnected. Reconnecting...");
+      setTimeout(initScale, 3000);
+    });
+
   } catch (err) {
-    console.error("❌ Failed to init scale:", err.message);
+    console.error("❌ Scale init exception:", err.message);
+    setTimeout(initScale, 3000);
   }
 }
 
