@@ -824,74 +824,6 @@ button {
   max-width: 100% !important;
   margin: 0 !important;
 }
-/* ─────────────────────────────── */
-/* Print styles – only receipt     */
-/* ─────────────────────────────── */
-
-@media print {
-  /* Remove default browser margins so the POS fits thermal roll better */
-  @page {
-    margin: 0;
-  }
-
-  body {
-    margin: 0;
-    padding: 0;
-    background: #ffffff !important;
-  }
-
-  #root {
-    padding: 0 !important;
-    background: #ffffff !important;
-    min-height: auto !important;
-  }
-
-  /* Hide everything on the page by default */
-  body * {
-    visibility: hidden !important;
-  }
-
-  /* Only show the receipt preview and its contents */
-  .receipt-preview,
-  .receipt-preview * {
-    visibility: visible !important;
-  }
-
-  /* Position the receipt as a small thermal slip */
-  .receipt-preview {
-    width: 58mm; /* typical thermal width */
-    margin: 0 auto !important;
-    border: none !important;
-    box-shadow: none !important;
-    padding: 8px !important;
-    background: #ffffff !important;
-    position: absolute;
-    left: 0;
-    right: 0;
-    top: 0;
-  }
-
-  /* Ensure text is compact and readable on the slip */
-  .receipt-preview,
-  .receipt-store-name,
-  .receipt-store-sub,
-  .receipt-items,
-  .receipt-item-row,
-  .receipt-totals,
-  .receipt-footer {
-    font-size: 10px;
-  }
-
-  .receipt-store-name {
-    font-size: 12px;
-    font-weight: 700;
-  }
-
-  .receipt-total-row-strong {
-    font-size: 11px;
-    font-weight: 700;
-  }
-}
 
 .form-label {
   display: flex;
@@ -1416,3 +1348,65 @@ button {
   background: #ef4444;
 }
 
+
+
+/* ===============================
+   THERMAL RECEIPT PRINT (77.5mm)
+   =============================== */
+
+@media print {
+  @page {
+    size: 77.5mm auto;
+    margin: 0;
+  }
+
+  html, body {
+    width: 77.5mm;
+    margin: 0;
+    padding: 0;
+    background: #ffffff !important;
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+    overflow: hidden;
+  }
+
+  /* Hide everything */
+  body * {
+    visibility: hidden !important;
+  }
+
+  /* Show receipt only */
+  .receipt-preview,
+  .receipt-preview * {
+    visibility: visible !important;
+  }
+
+  .receipt-preview {
+    width: 77.5mm;
+    margin: 0;
+    padding: 6mm 4mm;
+    box-sizing: border-box;
+    border: none !important;
+    box-shadow: none !important;
+    position: absolute;
+    top: 0;
+    left: 0;
+    font-family: monospace, system-ui, -apple-system;
+    font-size: 11px;
+    line-height: 1.35;
+  }
+
+  /* Remove printer-unfriendly styles */
+  * {
+    box-shadow: none !important;
+    text-shadow: none !important;
+    filter: none !important;
+    background-image: none !important;
+  }
+
+  /* Prevent page breaks inside receipt */
+  .receipt-preview * {
+    page-break-inside: avoid;
+    break-inside: avoid;
+  }
+}
