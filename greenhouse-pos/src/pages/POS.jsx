@@ -414,29 +414,31 @@
     // Subscribe to weighing scale stream (Electron or browser SSE)
     useEffect(() => {
       // If running inside Electron, listen to injected scale data
-      if (typeof window !== "undefined" && window.scale && window.scale.onData) {
-        console.info("POS: using Electron scale bridge");
+      if (typeof window !== "undefined" && window.scale?.onData) {
+        console.info("POS: connected to Electron scale bridge");
 
         window.scale.onData((raw) => {
-          console.log("📟 Scale raw data:", raw);
+          console.log("📟 SCALE RAW:", raw);
+          if (typeof raw !== "string") return;
 
-          // Normalize serial input (Essae / noisy serial formats)
-          const cleaned = raw
-            .replace(/[^\d.]/g, " ")
-            .split(" ")
-            .filter(Boolean)
-            .pop();
+          // Handles Essae / RS232 formats:
+          // "ST,GS,+  0.850kg"
+          // "WT:0.456"
+          // "  1.234 "
+          const match = raw.match(/[-+]?\d*\.\d+|\d+/);
+          if (!match) return;
 
-          if (!cleaned) return;
+          const w = parseFloat(match[0]);
 
-          const w = Number(cleaned);
+          // Ignore noise / zero drift
           if (!Number.isFinite(w) || w <= 0) return;
 
-          const formatted = w
-            .toFixed(4)
-            .replace(/0+$/, "")
-            .replace(/\.$/, "");
+          // Essae veg scales → 3 decimal precision
+          const formatted = w.toFixed(3);
 
+          console.log("⚖️ Parsed weight:", formatted);
+
+          // 🔥 React-controlled update (THIS is the key fix)
           setWeightKg(formatted);
         });
 

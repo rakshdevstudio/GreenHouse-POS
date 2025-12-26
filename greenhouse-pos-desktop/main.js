@@ -57,31 +57,31 @@ ipcMain.handle("print-receipt", async () => {
 
   try {
     await mainWindow.webContents.print({
-      silent: true,
-      printBackground: true,
+      silent: true,              // No print dialog
+      printBackground: true,     // Respect CSS colors
+      deviceName: "",            // Use system default printer
+      pageSize: {
+        width: 72000,            // 72mm in microns (safe width for 80mm roll)
+        height: 200000           // Large height for continuous thermal roll
+      },
+      margins: {
+        marginType: "none"       // CSS controls margins
+      }
     });
+
+    console.log("🖨️ Thermal receipt printed successfully");
     return { ok: true };
+
   } catch (err) {
-    console.error("❌ Print failed:", err);
+    console.error("❌ Thermal print failed:", err);
     return { ok: false, error: err.message };
   }
 });
 
 async function initScale() {
   try {
-    console.log("🔍 Scanning serial ports...");
-    const ports = await SerialPort.list();
-    console.table(ports);
-
-    // Essae / motherboard serial is almost always COM1
-    let portPath = "COM1";
-
-    // If COM1 not present, fall back
-    if (!ports.find(p => p.path === "COM1") && ports.length > 0) {
-      portPath = ports[0].path;
-    }
-
-    console.log("🔌 Using scale port:", portPath);
+    console.log("🔌 Using fixed motherboard serial port: COM1");
+    const portPath = "COM1";
 
     scalePort = new SerialPort({
       path: portPath,
@@ -104,17 +104,21 @@ async function initScale() {
     let buffer = "";
 
     scalePort.on("data", data => {
-      buffer += data.toString("utf8");
+      buffer += data.toString("ascii");
 
-      if (!buffer.includes("\n")) return;
+      if (!buffer.includes("\r") && !buffer.includes("\n")) return;
 
       const lines = buffer.split(/\r?\n/);
       buffer = lines.pop();
 
       for (const line of lines) {
-        console.log("📟 SCALE RAW:", line);
-        if (mainWindow) {
-          mainWindow.webContents.send("scale-data", line);
+        const clean = line.trim();
+        if (!clean) continue;
+
+        console.log("📟 SCALE RAW:", clean);
+
+        if (mainWindow && mainWindow.webContents) {
+          mainWindow.webContents.send("scale-data", clean);
         }
       }
     });

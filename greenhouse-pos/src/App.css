@@ -1350,63 +1350,82 @@ button {
 
 
 
+
 /* ===============================
-   THERMAL RECEIPT PRINT (77.5mm)
+   THERMAL RECEIPT PRINT (72mm SAFE)
    =============================== */
 
 @media print {
   @page {
-    size: 77.5mm auto;
+    /* 72mm is the safe printable area for 77.5mm / 80mm rolls */
+    size: 72mm auto;
     margin: 0;
   }
 
-  html, body {
-    width: 77.5mm;
+  body {
+    width: 72mm;
     margin: 0;
     padding: 0;
-    background: #ffffff !important;
+    background: #ffffff;
     -webkit-print-color-adjust: exact;
     print-color-adjust: exact;
     overflow: hidden;
   }
 
-  /* Hide everything */
-  body * {
-    visibility: hidden !important;
+  /* Hide entire POS UI */
+  #root,
+  .app-nav,
+  .pos-header,
+  .pos-main > section,
+  .pos-shortcuts {
+    display: none !important;
   }
 
-  /* Show receipt only */
-  .receipt-preview,
+  /* Show ONLY receipt */
+  .receipt-preview {
+    display: block !important;
+    visibility: visible !important;
+    width: 72mm !important;
+    padding: 2mm;
+    box-sizing: border-box;
+    position: relative !important; /* critical for thermal printers */
+    border: none !important;
+    box-shadow: none !important;
+    font-family: "Courier New", Courier, monospace;
+    font-size: 10px;
+    line-height: 1.2;
+  }
+
   .receipt-preview * {
     visibility: visible !important;
   }
 
-  .receipt-preview {
-    width: 77.5mm;
-    margin: 0;
-    padding: 6mm 4mm;
-    box-sizing: border-box;
+  /* Item row alignment */
+  .receipt-item-row {
+    display: flex !important;
+    justify-content: space-between;
+    width: 100%;
     border: none !important;
-    box-shadow: none !important;
-    position: absolute;
-    top: 0;
-    left: 0;
-    font-family: monospace, system-ui, -apple-system;
-    font-size: 11px;
-    line-height: 1.35;
   }
 
-  /* Remove printer-unfriendly styles */
-  * {
-    box-shadow: none !important;
-    text-shadow: none !important;
-    filter: none !important;
-    background-image: none !important;
+  .receipt-divider {
+    border-top: 1px dashed #000 !important;
+    width: 100%;
+    margin: 5px 0;
   }
 
-  /* Prevent page breaks inside receipt */
+  /* Prevent page breaks */
+  .receipt-preview,
   .receipt-preview * {
     page-break-inside: avoid;
     break-inside: avoid;
+  }
+
+  /* Remove visual effects */
+  * {
+    background: transparent !important;
+    box-shadow: none !important;
+    text-shadow: none !important;
+    filter: none !important;
   }
 }
