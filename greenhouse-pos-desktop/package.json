@@ -1,26 +1,30 @@
 {
   "name": "greenhouse-pos-desktop",
   "version": "1.0.1",
-  "description": "",
+  "description": "Greenhouse POS Desktop Application with Weighing Scale Support",
   "main": "main.js",
   "scripts": {
     "start": "electron .",
     "dev": "electron .",
     "pack": "electron-builder --dir",
-    "build": "electron-builder"
+    "build": "electron-builder --win --x64",
+    "build:win": "electron-builder --win --x64",
+    "rebuild": "electron-rebuild",
+    "postinstall": "electron-builder install-app-deps"
   },
-  "keywords": [],
-  "author": "",
+  "keywords": ["pos", "greenhouse", "retail", "weighing-scale"],
+  "author": "Raksh Dev Studio",
   "license": "ISC",
   "type": "commonjs",
   "dependencies": {
     "electron-updater": "^6.6.2",
-    "node-thermal-printer": "^4.5.0",
-    "serialport": "^13.0.0"
+    "serialport": "^13.0.0",
+    "@serialport/parser-readline": "^13.0.0"
   },
   "devDependencies": {
-    "electron": "^39.2.7",
-    "electron-builder": "^26.0.12"
+    "electron": "^33.2.0",
+    "electron-builder": "^26.0.12",
+    "electron-rebuild": "^3.2.9"
   },
   "build": {
     "appId": "com.greenhouse.pos",
@@ -30,7 +34,10 @@
       "output": "dist"
     },
     "files": [
-      "**/*"
+      "main.js",
+      "preload.js",
+      "package.json",
+      "node_modules/**/*"
     ],
     "win": {
       "target": [
@@ -38,12 +45,17 @@
           "target": "nsis",
           "arch": ["x64"]
         }
-      ]
+      ],
+      "icon": "build/icon.ico"
     },
     "nsis": {
       "oneClick": true,
       "perMachine": false,
-      "allowToChangeInstallationDirectory": false
+      "allowToChangeInstallationDirectory": false,
+      "installerIcon": "build/icon.ico",
+      "uninstallerIcon": "build/icon.ico",
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true
     },
     "publish": {
       "provider": "github",
