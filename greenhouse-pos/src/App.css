@@ -1362,11 +1362,11 @@ button {
     margin: 0;
   }
 
-  body {
+  html, body {
     width: 72mm;
     margin: 0;
     padding: 0;
-    background: #ffffff;
+    background: #ffffff !important;
     -webkit-print-color-adjust: exact;
     print-color-adjust: exact;
     overflow: hidden;
@@ -1388,7 +1388,7 @@ button {
     width: 72mm !important;
     padding: 2mm;
     box-sizing: border-box;
-    position: relative !important; /* critical for thermal printers */
+    position: relative !important; /* CRITICAL: no absolute positioning */
     border: none !important;
     box-shadow: none !important;
     font-family: "Courier New", Courier, monospace;
@@ -1414,14 +1414,14 @@ button {
     margin: 5px 0;
   }
 
-  /* Prevent page breaks */
+  /* Prevent page breaks inside receipt */
   .receipt-preview,
   .receipt-preview * {
     page-break-inside: avoid;
     break-inside: avoid;
   }
 
-  /* Remove visual effects */
+  /* Remove UI effects that confuse thermal drivers */
   * {
     background: transparent !important;
     box-shadow: none !important;
