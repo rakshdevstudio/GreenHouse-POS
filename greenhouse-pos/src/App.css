@@ -1357,7 +1357,6 @@ button {
 
 @media print {
   @page {
-    /* 72mm is the safe printable area for 77.5mm / 80mm rolls */
     size: 72mm auto;
     margin: 0;
   }
@@ -1369,63 +1368,40 @@ button {
     background: #ffffff !important;
     -webkit-print-color-adjust: exact;
     print-color-adjust: exact;
-    overflow: hidden;
   }
 
-  /* Hide entire POS UI */
-  #root,
-  .app-nav,
-  .pos-header,
-  .pos-main > section,
-  .pos-shortcuts {
-    display: none !important;
+  /* Hide EVERYTHING by default */
+  body * {
+    visibility: hidden !important;
   }
 
   /* Show ONLY receipt */
-  .receipt-preview {
-    display: block !important;
+  .receipt-preview,
+  .receipt-preview * {
     visibility: visible !important;
-    width: 72mm !important;
+  }
+
+  .receipt-preview {
+    position: absolute;
+    left: 0;
+    top: 0;
+    width: 72mm;
     padding: 2mm;
     box-sizing: border-box;
-    position: relative !important; /* CRITICAL: no absolute positioning */
-    border: none !important;
-    box-shadow: none !important;
     font-family: "Courier New", Courier, monospace;
     font-size: 10px;
     line-height: 1.2;
+    background: #ffffff;
   }
 
-  .receipt-preview * {
-    visibility: visible !important;
-  }
-
-  /* Item row alignment */
   .receipt-item-row {
-    display: flex !important;
+    display: flex;
     justify-content: space-between;
     width: 100%;
-    border: none !important;
   }
 
   .receipt-divider {
-    border-top: 1px dashed #000 !important;
-    width: 100%;
+    border-top: 1px dashed #000;
     margin: 5px 0;
-  }
-
-  /* Prevent page breaks inside receipt */
-  .receipt-preview,
-  .receipt-preview * {
-    page-break-inside: avoid;
-    break-inside: avoid;
-  }
-
-  /* Remove UI effects that confuse thermal drivers */
-  * {
-    background: transparent !important;
-    box-shadow: none !important;
-    text-shadow: none !important;
-    filter: none !important;
   }
 }
