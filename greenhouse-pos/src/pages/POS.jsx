@@ -414,35 +414,49 @@
     // Subscribe to weighing scale stream (Electron ONLY)
     useEffect(() => {
       if (typeof window === "undefined") return;
-      if (!window.scale || !window.scale.onData) {
-        console.warn("POS: Electron scale bridge not available");
-        return;
+
+      // Preferred path: Electron preload exposes scale events
+      if (window.electron && typeof window.electron.onScaleData === "function") {
+        console.info("POS: listening via electron.onScaleData");
+
+        const unsubscribe = window.electron.onScaleData((raw) => {
+          console.log("📟 SCALE RAW:", raw);
+          if (typeof raw !== "string") return;
+
+          const match = raw.match(/[-+]?\d*\.\d+|\d+/);
+          if (!match) return;
+
+          const w = parseFloat(match[0]);
+          if (!Number.isFinite(w) || w <= 0) return;
+
+          setWeightKg(w.toFixed(3));
+        });
+
+        return () => {
+          if (typeof unsubscribe === "function") unsubscribe();
+        };
       }
 
-      console.info("POS: connected to Electron scale bridge");
+      // Fallback path: legacy window.scale bridge
+      if (window.scale && typeof window.scale.onData === "function") {
+        console.info("POS: listening via window.scale.onData");
 
-      window.scale.onData((raw) => {
-        console.log("📟 SCALE RAW:", raw);
-        if (typeof raw !== "string") return;
+        window.scale.onData((raw) => {
+          console.log("📟 SCALE RAW:", raw);
+          if (typeof raw !== "string") return;
 
-        // Handles Essae / RS232 formats like:
-        // "ST,GS,+  0.850kg"
-        // "WT:0.456"
-        // "  1.234 "
-        const match = raw.match(/[-+]?\d*\.\d+|\d+/);
-        if (!match) return;
+          const match = raw.match(/[-+]?\d*\.\d+|\d+/);
+          if (!match) return;
 
-        const w = parseFloat(match[0]);
-        if (!Number.isFinite(w) || w <= 0) return;
+          const w = parseFloat(match[0]);
+          if (!Number.isFinite(w) || w <= 0) return;
 
-        // Essae veg scales → 3 decimal precision
-        const formatted = w.toFixed(3);
-        console.log("⚖️ Parsed weight:", formatted);
-
-        // React-controlled update (authoritative)
-        setWeightKg(formatted);
-      });
-    }, [activeProduct]);
+          setWeightKg(w.toFixed(3));
+        });
+      } else {
+        console.warn("POS: no scale bridge available");
+      }
+    }, []);
 
     // Dev helper: allow mocking the scale from browser console
     useEffect(() => {

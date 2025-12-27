@@ -57,15 +57,20 @@ ipcMain.handle("print-receipt", async () => {
 
   try {
     await mainWindow.webContents.print({
-      silent: true,              // No print dialog
-      printBackground: true,     // Respect CSS colors
-      deviceName: "",            // Use system default printer
+      silent: true,
+      printBackground: true,
+      deviceName: "",
+
+      // VERY IMPORTANT for thermal printers
+      waitForResponse: true,
+
       pageSize: {
-        width: 72000,            // 72mm in microns (safe width for 80mm roll)
-        height: 200000           // Large height for continuous thermal roll
+        width: 72000,      // 72mm (safe for 77.5 / 80mm)
+        height: 300000     // Large height so content is not cut
       },
+
       margins: {
-        marginType: "none"       // CSS controls margins
+        marginType: "none"
       }
     });
 
@@ -89,7 +94,7 @@ async function initScale() {
       dataBits: 8,
       stopBits: 1,
       parity: "none",
-      autoOpen: false,
+      autoOpen: true,
     });
 
     scalePort.open(err => {
@@ -114,6 +119,9 @@ async function initScale() {
       for (const line of lines) {
         const clean = line.trim();
         if (!clean) continue;
+
+        // Ignore garbage lines
+        if (!/\d/.test(clean)) continue;
 
         console.log("📟 SCALE RAW:", clean);
 
@@ -147,8 +155,6 @@ app.whenReady().then(() => {
       createWindow();
     }
   });
-
-  if (!isDev) autoUpdater.checkForUpdates();
 });
 
 app.on("window-all-closed", () => {
