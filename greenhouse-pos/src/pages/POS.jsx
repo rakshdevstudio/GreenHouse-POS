@@ -411,85 +411,37 @@
       setFocusQtyForId(null);
     }, [focusQtyForId, cart.length]);
 
-    // Subscribe to weighing scale stream (Electron or browser SSE)
+    // Subscribe to weighing scale stream (Electron ONLY)
     useEffect(() => {
-      // If running inside Electron, listen to injected scale data
-      if (typeof window !== "undefined" && window.scale?.onData) {
-        console.info("POS: connected to Electron scale bridge");
-
-        window.scale.onData((raw) => {
-          console.log("📟 SCALE RAW:", raw);
-          if (typeof raw !== "string") return;
-
-          // Handles Essae / RS232 formats:
-          // "ST,GS,+  0.850kg"
-          // "WT:0.456"
-          // "  1.234 "
-          const match = raw.match(/[-+]?\d*\.\d+|\d+/);
-          if (!match) return;
-
-          const w = parseFloat(match[0]);
-
-          // Ignore noise / zero drift
-          if (!Number.isFinite(w) || w <= 0) return;
-
-          // Essae veg scales → 3 decimal precision
-          const formatted = w.toFixed(3);
-
-          console.log("⚖️ Parsed weight:", formatted);
-
-          // 🔥 React-controlled update (THIS is the key fix)
-          setWeightKg(formatted);
-        });
-
+      if (typeof window === "undefined") return;
+      if (!window.scale || !window.scale.onData) {
+        console.warn("POS: Electron scale bridge not available");
         return;
       }
 
-      // Browser fallback: listen to local Node scale bridge (SSE)
-      const localScaleBase =
-        localStorage.getItem("SCALE_BASE") ||
-        (typeof window !== "undefined" && window.SCALE_BASE) ||
-        "http://localhost:3001";
+      console.info("POS: connected to Electron scale bridge");
 
-      const url = `${localScaleBase}/scale/stream`;
-      let ev;
+      window.scale.onData((raw) => {
+        console.log("📟 SCALE RAW:", raw);
+        if (typeof raw !== "string") return;
 
-      console.info("POS: connecting to scale SSE:", url);
+        // Handles Essae / RS232 formats like:
+        // "ST,GS,+  0.850kg"
+        // "WT:0.456"
+        // "  1.234 "
+        const match = raw.match(/[-+]?\d*\.\d+|\d+/);
+        if (!match) return;
 
-      try {
-        ev = new EventSource(url);
+        const w = parseFloat(match[0]);
+        if (!Number.isFinite(w) || w <= 0) return;
 
-        ev.onmessage = (event) => {
-          if (!event.data) return;
+        // Essae veg scales → 3 decimal precision
+        const formatted = w.toFixed(3);
+        console.log("⚖️ Parsed weight:", formatted);
 
-          try {
-            const data = JSON.parse(event.data);
-            if (data.weight_kg == null) return;
-
-            const w = Number(data.weight_kg);
-            if (!Number.isFinite(w) || w <= 0) return;
-
-            const formatted = w
-              .toFixed(4)
-              .replace(/0+$/, "")
-              .replace(/\.$/, "");
-
-            setWeightKg(formatted);
-          } catch (err) {
-            console.warn("POS: scale parse error", err, event.data);
-          }
-        };
-
-        ev.onerror = (err) => {
-          console.warn("POS: scale SSE error", err);
-        };
-      } catch (err) {
-        console.warn("POS: scale EventSource init failed", err);
-      }
-
-      return () => {
-        if (ev) ev.close();
-      };
+        // React-controlled update (authoritative)
+        setWeightKg(formatted);
+      });
     }, [activeProduct]);
 
     // Dev helper: allow mocking the scale from browser console
