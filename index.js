@@ -247,19 +247,33 @@ let latestWeight = null;
 app.post('/scale/weight', (req, res) => {
   const w = Number(req.body && req.body.weight_kg);
 
-  if (!Number.isFinite(w) || w <= 0) {
-    return res.status(400).json({ error: 'weight_kg missing or invalid' });
+  // ✅ allow ALL numeric values: zero / minus / pan empty
+  if (!Number.isFinite(w)) {
+    return res.status(400).json({ error: 'weight_kg must be a number' });
   }
 
-  // keep a cached copy
+  // keep latest value as-is (safe precision only)
   latestWeight = Number(w.toFixed(4));
 
-  // broadcast to all listeners (SSE / WS)
+  // 🔥 broadcast to SSE listeners
   scaleEmitter.emit('weight', latestWeight);
 
-  // optional log for verification on Railway
-  console.log('⚖️ Scale weight received:', latestWeight);
+  // 🔥 broadcast to WebSocket clients (Electron POS)
+  const payload = JSON.stringify({
+    type: 'scale',
+    weight_kg: latestWeight,
+    ts: Date.now(),
+  });
 
+  wss.clients.forEach((client) => {
+    if (client.readyState === WebSocket.OPEN) {
+      try {
+        client.send(payload);
+      } catch (e) {}
+    }
+  });
+
+  console.log('⚖️ Scale weight received:', latestWeight);
   return res.json({ ok: true, weight_kg: latestWeight });
 });
 
