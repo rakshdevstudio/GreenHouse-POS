@@ -181,6 +181,60 @@ app.get('/health', (req, res) => {
   res.json({ status: 'ok', time: new Date().toISOString() });
 });
 
+// List terminals for a store by username, auto-create default if none exist
+app.get('/auth/terminals', async (req, res) => {
+  const { username } = req.query;
+  if (!username) {
+    return res.status(400).json({ terminals: [] });
+  }
+
+  const client = await pool.connect();
+  try {
+    // 1. Find store by username
+    const storeRes = await client.query(
+      `SELECT store_id FROM store_credentials WHERE username = $1 LIMIT 1`,
+      [username]
+    );
+
+    if (!storeRes.rows.length) {
+      client.release();
+      return res.json({ terminals: [] });
+    }
+
+    const storeId = storeRes.rows[0].store_id;
+
+    // 2. Fetch terminals for store
+    let termRes = await client.query(
+      `SELECT id AS terminal_id, terminal_uuid, label
+         FROM terminals
+        WHERE store_id = $1
+        ORDER BY id ASC`,
+      [storeId]
+    );
+
+    // 3. Auto-create default terminal if none exist
+    if (termRes.rows.length === 0) {
+      const terminalUuid = `${storeId}-T1`;
+
+      const insertRes = await client.query(
+        `INSERT INTO terminals (store_id, terminal_uuid, label)
+         VALUES ($1,$2,$3)
+         RETURNING id AS terminal_id, terminal_uuid, label`,
+        [storeId, terminalUuid, 'Terminal 1']
+      );
+
+      termRes = { rows: insertRes.rows };
+    }
+
+    client.release();
+    return res.json({ terminals: termRes.rows });
+  } catch (err) {
+    client.release();
+    console.error('list terminals error', err);
+    return res.status(500).json({ terminals: [] });
+  }
+});
+
 // Simple DB info helper (for debugging which database you're connected to)
 app.get('/db-info', async (req, res) => {
   try {
