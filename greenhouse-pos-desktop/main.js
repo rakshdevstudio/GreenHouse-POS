@@ -12,6 +12,19 @@ let parser = null;
 let isDev = !app.isPackaged;
 
 let scaleInitializing = false;
+let scaleStatus = "disconnected"; // disconnected | connecting | connected
+
+function notifyScaleStatus(status, info) {
+  scaleStatus = status;
+  console.log("📡 SCALE STATUS:", status, info || "");
+  if (mainWindow && mainWindow.webContents && !mainWindow.isDestroyed()) {
+    mainWindow.webContents.send("scale-status", {
+      status,
+      info: info || null,
+      ts: Date.now(),
+    });
+  }
+}
 
 function createWindow() {
   mainWindow = new BrowserWindow({
@@ -210,6 +223,7 @@ function parseEssaeWeight(raw) {
 async function initScale() {
   if (scaleInitializing) return;
   scaleInitializing = true;
+  notifyScaleStatus("connecting");
   try {
     // Load optional config file (scale-config.json) next to this main.js
     const defaultCfg = {
@@ -336,6 +350,7 @@ async function initScale() {
       try {
         openedPort = await tryOpenPort(cfg.path);
         console.log('✅ Scale connected on', cfg.path);
+        notifyScaleStatus("connected", { port: openedPort.path || cfg.path });
       } catch (err) {
         console.warn('❌ Failed to open configured port', cfg.path, err && err.message);
       }
@@ -378,6 +393,7 @@ async function initScale() {
         try {
           openedPort = await tryOpenPort(pth);
           console.log('✅ Scale connected on', pth);
+          notifyScaleStatus("connected", { port: openedPort.path || cfg.path });
           break;
         } catch (err) {
           console.warn('❌ Could not open', pth, err && err.message);
@@ -386,6 +402,7 @@ async function initScale() {
     }
 
     if (!openedPort) {
+      notifyScaleStatus("disconnected", { tried: triedPaths });
       console.error('❌ No scale port available. Tried:', triedPaths);
       // Retry after delay
       setTimeout(initScale, 3000);
@@ -431,6 +448,7 @@ async function initScale() {
     });
 
     scalePort.on("error", (err) => {
+      notifyScaleStatus("disconnected", { error: err.message });
       console.error("❌ Scale error:", err.message);
       if (scalePort && scalePort.isOpen === true) {
         try { scalePort.close(); } catch (e) {}
@@ -438,6 +456,7 @@ async function initScale() {
     });
 
     scalePort.on("close", () => {
+      notifyScaleStatus("disconnected");
       console.warn("⚠️ Scale disconnected. Reconnecting in 3 seconds...");
       scalePort = null;
       parser = null;
@@ -464,6 +483,10 @@ app.whenReady().then(() => {
       createWindow();
     }
   });
+});
+
+ipcMain.handle("get-scale-status", async () => {
+  return { status: scaleStatus };
 });
 
 app.on("window-all-closed", () => {
