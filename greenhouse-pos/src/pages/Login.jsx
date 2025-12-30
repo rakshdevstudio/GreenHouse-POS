@@ -13,25 +13,34 @@ export default function Login() {
 
   const userInputRef = useRef(null);
 
+  // Focus username on first load
   useEffect(() => {
-    // focus username on first load
     if (userInputRef.current) {
       userInputRef.current.focus();
       userInputRef.current.select();
     }
   }, []);
 
+  // Fetch terminals when username changes
   useEffect(() => {
     if (!username) return;
 
     let cancelled = false;
+    setTerminals([]);
+    setTerminalId("");
     setTerminalsLoading(true);
+
+    if (typeof api.listTerminals !== "function") {
+      console.warn("listTerminals API not available");
+      setTerminalsLoading(false);
+      return;
+    }
 
     api
       .listTerminals({ username })
       .then((res) => {
         if (cancelled) return;
-        const list = res?.terminals || [];
+        const list = Array.isArray(res?.terminals) ? res.terminals : [];
         setTerminals(list);
         if (list.length > 0) {
           setTerminalId(String(list[0].terminal_id));
@@ -40,6 +49,7 @@ export default function Login() {
       .catch((err) => {
         if (!cancelled) {
           console.error("terminal fetch error", err);
+          setError("Unable to load terminals for this store");
           setTerminals([]);
         }
       })
@@ -55,6 +65,12 @@ export default function Login() {
   async function submit(e) {
     e.preventDefault();
     setError(null);
+
+    if (!terminalId) {
+      setError("Please select a terminal");
+      return;
+    }
+
     setLoading(true);
 
     try {
@@ -64,20 +80,17 @@ export default function Login() {
         terminal_id: terminalId,
       });
 
-      // api.loginStore already stores STORE_TOKEN & STORE_ID,
-      // but we also safely set STORE_ID here if present
-      if (res && res.store_id) {
+      if (res?.store_id) {
         localStorage.setItem("STORE_ID", String(res.store_id));
       }
-      if (terminalId) {
-        localStorage.setItem("TERMINAL_ID", String(terminalId));
-      }
 
-      // 🔁 Hard reload so App.jsx sees the token and switches to POS
+      localStorage.setItem("TERMINAL_ID", String(terminalId));
+
+      // Hard reload so App.jsx switches to POS
       window.location.reload();
     } catch (err) {
       console.error("login error", err);
-      setError(err.message || String(err));
+      setError(err?.message || "Login failed");
     } finally {
       setLoading(false);
     }
@@ -86,12 +99,11 @@ export default function Login() {
   return (
     <div className="login-page">
       <div className="pos-shell login-shell">
-        {/* Header */}
         <header className="login-header">
           <div>
             <h1 className="pos-title">Store Login</h1>
             <p className="pos-subtitle">
-              Sign in to start billing on this terminal.
+              Sign in to start billing on this terminal
             </p>
           </div>
           <div className="login-pill">
@@ -100,15 +112,8 @@ export default function Login() {
           </div>
         </header>
 
+        {error && <div className="error-box">{error}</div>}
 
-
-        {error && (
-          <div className="error-box" style={{ marginBottom: 12 }}>
-            {error}
-          </div>
-        )}
-
-        {/* Form */}
         <form className="login-form" onSubmit={submit}>
           <div className="login-grid">
             <label className="form-label">
@@ -130,12 +135,12 @@ export default function Login() {
                 className="pos-input"
                 value={terminalId}
                 onChange={(e) => setTerminalId(e.target.value)}
-                disabled={terminalsLoading || terminals.length === 0}
+                disabled={terminalsLoading}
                 required
               >
                 {terminalsLoading && <option>Loading terminals…</option>}
                 {!terminalsLoading && terminals.length === 0 && (
-                  <option value="">No terminals found</option>
+                  <option value="">No terminals available</option>
                 )}
                 {!terminalsLoading &&
                   terminals.map((t) => (
