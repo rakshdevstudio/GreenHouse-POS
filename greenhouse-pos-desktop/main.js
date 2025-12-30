@@ -244,33 +244,37 @@ function parseEssaeWeight(raw) {
   if (!raw || typeof raw !== 'string') return null;
 
   const clean = raw.trim();
-  
+
   // Common Essae formats:
   // Format 1: "ST,GS,+00.850kg"
   // Format 2: "US,GS,+00.850kg"
   // Format 3: "00.850kg"
   // Format 4: "+00.850"
   // Format 5: "0.850"
-  
+
   // Try to extract weight with optional unit
   const patterns = [
     /([+-]?\d+\.?\d*)\s*kg/i,           // "0.850kg" or "+0.850kg"
     /([+-]?\d+\.?\d*)\s*g/i,            // "850g" (grams)
     /,([+-]?\d+\.?\d*)(?:kg|g)?/i,      // ",+00.850kg" (comma-separated)
-    /([+-]?\d*\.?\d+)/,                  // Any number with optional sign
+    /([+-]?\d*\.?\d+)/,                 // Any number with optional sign
   ];
 
   for (const pattern of patterns) {
     const match = clean.match(pattern);
     if (match) {
       let value = parseFloat(match[1]);
-      
+
       // If the match includes 'g' (grams), convert to kg
-      if (match[0].toLowerCase().includes('g') && !match[0].toLowerCase().includes('kg')) {
+      if (
+        match[0].toLowerCase().includes('g') &&
+        !match[0].toLowerCase().includes('kg')
+      ) {
         value = value / 1000;
       }
-      
-      if (Number.isFinite(value) && value > 0) {
+
+      // Accept zero and negative values as well (for taring, etc.)
+      if (Number.isFinite(value)) {
         return value;
       }
     }
@@ -492,14 +496,14 @@ async function initScale() {
       const weight = parseEssaeWeight(clean);
       
       if (weight !== null) {
-        const weightKg = weight.toFixed(3);
+        const weightKg = Number(weight.toFixed(3));
         console.log("⚖️ PARSED WEIGHT:", weightKg, "kg");
-        
+
         // Send raw line to renderer (existing renderer code parses it too)
         if (mainWindow && mainWindow.webContents && !mainWindow.isDestroyed()) {
           mainWindow.webContents.send("scale-data", {
             raw: clean,
-            weightKg: Number(weightKg),
+            weightKg: weightKg,
           });
         }
       } else {
