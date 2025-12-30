@@ -430,7 +430,9 @@ useEffect(() => {
 
   let unsubscribe;
   let unsubscribeStatus;
-  let disconnectTimer;
+  // Robust disconnect detection using interval watchdog
+  let watchdog;
+  let lastScaleEventAt = Date.now();
 
   if (window.electron && typeof window.electron.onScaleStatus === "function") {
     unsubscribeStatus = window.electron.onScaleStatus((payload) => {
@@ -444,12 +446,8 @@ useEffect(() => {
   if (window.electron && typeof window.electron.onScaleData === "function") {
     console.info("POS: listening via window.electron.onScaleData");
 
-    // Auto-disconnect fallback: if no data in 3s, mark as disconnected
-    disconnectTimer = setTimeout(() => {
-      setScaleStatus("disconnected");
-    }, 3000);
-
     unsubscribe = window.electron.onScaleData((payload) => {
+      lastScaleEventAt = Date.now();
       console.log("📟 SCALE EVENT:", payload);
 
       // Accept BOTH backend + raw formats
@@ -473,13 +471,19 @@ useEffect(() => {
       // 🔁 ALWAYS update live weight (even zero / minus)
       setLiveWeightKg(formatted);
       setScaleStatus("connected");
-      clearTimeout(disconnectTimer);
 
       // 🔒 If weighing & not locked, auto-fill input
       if (activeProduct && !weightLocked) {
         setWeightKg(formatted);
       }
     });
+
+    // Watchdog: check for disconnect every second
+    watchdog = setInterval(() => {
+      if (Date.now() - lastScaleEventAt > 3000) {
+        setScaleStatus("disconnected");
+      }
+    }, 1000);
   }
 
   // 🔹 LEGACY FALLBACK (some builds exposed window.scale)
@@ -511,7 +515,7 @@ useEffect(() => {
   return () => {
     if (typeof unsubscribe === "function") unsubscribe();
     if (typeof unsubscribeStatus === "function") unsubscribeStatus();
-    clearTimeout(disconnectTimer);
+    if (watchdog) clearInterval(watchdog);
   };
 }, [activeProduct, weightLocked]);
 
@@ -1020,25 +1024,7 @@ useEffect(() => {
     return (
       <div className="pos-shell">
         {/* Live weight floating panel */}
-        <div
-          style={{
-            position: "fixed",
-            top: 16,
-            right: 16,
-            zIndex: 1000,
-            background: "#ffffff",
-            borderRadius: 14,
-            padding: "14px 18px",
-            minWidth: 200,
-            boxShadow: "0 10px 24px rgba(0,0,0,0.12)",
-            border: "1px solid #e5e7eb",
-            fontFamily: "inherit",
-            display: "flex",
-            flexDirection: "column",
-            alignItems: "center",
-            gap: 6,
-          }}
-        >
+        <div className="live-weight-float">
           <div style={{ fontSize: 12, fontWeight: 600, color: "#475569" }}>
             ⚖ LIVE WEIGHT
           </div>
