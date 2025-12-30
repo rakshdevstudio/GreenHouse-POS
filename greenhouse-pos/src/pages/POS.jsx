@@ -57,6 +57,12 @@
     // Weighing scale flow
     const [activeProduct, setActiveProduct] = useState(null);
     const [weightKg, setWeightKg] = useState("");
+    // Global live scale reading (always running)
+    const [liveWeightKg, setLiveWeightKg] = useState(null);
+    // Scale connection status: "connected" | "connecting" | "disconnected"
+    const [scaleStatus, setScaleStatus] = useState("disconnected"); // "connected" | "connecting" | "disconnected"
+    // Weight lock for scale input
+    const [weightLocked, setWeightLocked] = useState(false);
     const weightInputRef = useRef(null);
     const searchInputRef = useRef(null);
     const quickAddNameRef = useRef(null);
@@ -340,7 +346,7 @@
     }
   }, []);
 
-    // Keyboard shortcuts: focus search, focus weight input, quick add product, quick checkout
+    // Keyboard shortcuts: focus search, focus weight input, quick add product, quick checkout, weight lock toggle
     useEffect(() => {
       function handleKeyDown(e) {
         const tag = e.target.tagName;
@@ -372,6 +378,13 @@
             weightInputRef.current.focus();
             weightInputRef.current.select();
           }
+          return;
+        }
+
+        // Space => lock / unlock weight (only when NOT typing and when weighing)
+        if (!isTypingField && e.code === "Space" && activeProduct) {
+          e.preventDefault();
+          setWeightLocked((v) => !v);
           return;
         }
 
@@ -411,16 +424,24 @@
       setFocusQtyForId(null);
     }, [focusQtyForId, cart.length]);
 
-    // Subscribe to weighing scale stream (Electron ONLY)
+// Subscribe to weighing scale stream (Electron ONLY)
 useEffect(() => {
   if (typeof window === "undefined") return;
 
   let unsubscribe;
+  let unsubscribeStatus;
+
+  if (window.electron && typeof window.electron.onScaleStatus === "function") {
+    unsubscribeStatus = window.electron.onScaleStatus((payload) => {
+      if (payload && payload.status) {
+        setScaleStatus(payload.status);
+      }
+    });
+  }
 
   // 🔹 NEW ELECTRON BRIDGE (preferred)
   if (window.electron && typeof window.electron.onScaleData === "function") {
     console.info("POS: listening via window.electron.onScaleData");
-
     unsubscribe = window.electron.onScaleData((raw) => {
       console.log("📟 SCALE RAW (electron):", raw);
       if (typeof raw !== "string") return;
@@ -431,14 +452,20 @@ useEffect(() => {
       const w = parseFloat(match[0]);
       if (!Number.isFinite(w) || w <= 0) return;
 
-      setWeightKg(w.toFixed(3));
+      // 🔁 always update live weight
+      const formatted = w.toFixed(3);
+      setLiveWeightKg(formatted);
+
+      // 🔒 if a product is active, lock this weight into the input
+      if (activeProduct && !weightLocked) {
+        setWeightKg(formatted);
+      }
     });
   }
 
   // 🔹 LEGACY FALLBACK (some builds exposed window.scale)
   else if (window.scale && typeof window.scale.onData === "function") {
     console.info("POS: listening via window.scale.onData (legacy)");
-
     window.scale.onData((raw) => {
       console.log("📟 SCALE RAW (legacy):", raw);
       if (typeof raw !== "string") return;
@@ -449,7 +476,14 @@ useEffect(() => {
       const w = parseFloat(match[0]);
       if (!Number.isFinite(w) || w <= 0) return;
 
-      setWeightKg(w.toFixed(3));
+      // 🔁 always update live weight
+      const formatted = w.toFixed(3);
+      setLiveWeightKg(formatted);
+
+      // 🔒 if a product is active, lock this weight into the input
+      if (activeProduct && !weightLocked) {
+        setWeightKg(formatted);
+      }
     });
   } else {
     console.warn("POS: ❌ No Electron scale bridge found");
@@ -457,8 +491,9 @@ useEffect(() => {
 
   return () => {
     if (typeof unsubscribe === "function") unsubscribe();
+    if (typeof unsubscribeStatus === "function") unsubscribeStatus();
   };
-}, []);
+}, [activeProduct, weightLocked]);
 
     // Dev helper: allow mocking the scale from browser console
     useEffect(() => {
@@ -561,9 +596,13 @@ useEffect(() => {
         return;
       }
 
+      // If scale is already running, pre-fill current live weight
+      if (liveWeightKg) {
+        setWeightKg(liveWeightKg);
+      }
+
       // For weight-based items, open the scale flow.
       setActiveProduct(product);
-      setWeightKg("");
       setError(null);
     }
 
@@ -592,6 +631,8 @@ useEffect(() => {
       return clone;
     });
 
+    // keep live weight running, only clear locked input
+    setWeightLocked(false);
     setWeightKg("");
     setActiveProduct(null);
     setError(null);
@@ -958,6 +999,55 @@ useEffect(() => {
 
     return (
       <div className="pos-shell">
+        {/* Live weight floating panel */}
+        <div
+          style={{
+            position: "fixed",
+            top: 16,
+            right: 16,
+            zIndex: 1000,
+            background: "#ffffff",
+            borderRadius: 12,
+            padding: "12px 16px",
+            minWidth: 160,
+            boxShadow: "0 8px 20px rgba(0,0,0,0.12)",
+            border: "1px solid #e5e7eb",
+            fontFamily: "inherit",
+          }}
+        >
+          <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 4 }}>
+            ⚖ Live Weight
+          </div>
+          <div style={{ fontSize: 24, fontWeight: 700, marginBottom: 6 }}>
+            {liveWeightKg ? `${liveWeightKg} kg` : "—"}
+          </div>
+          <button
+            type="button"
+            onClick={() => setWeightLocked((v) => !v)}
+            style={{
+              marginTop: 6,
+              fontSize: 11,
+              padding: "4px 8px",
+              borderRadius: 999,
+              border: "1px solid #cbd5f5",
+              background: weightLocked ? "#fee2e2" : "#e0f2fe",
+              color: weightLocked ? "#b91c1c" : "#0369a1",
+              cursor: "pointer",
+              fontWeight: 600,
+            }}
+          >
+            {weightLocked ? "🔒 Weight locked" : "🔓 Lock weight"}
+          </button>
+          <div style={{ fontSize: 12, fontWeight: 500 }}>
+            {scaleStatus === "connected" ? (
+              <span style={{ color: "#059669" }}>🟢 Connected</span>
+            ) : scaleStatus === "connecting" ? (
+              <span style={{ color: "#a16207" }}>🟡 Connecting</span>
+            ) : (
+              <span style={{ color: "#b91c1c" }}>🔴 Not connected</span>
+            )}
+          </div>
+        </div>
         {/* Header */}
         <header className="pos-header">
           <div>
@@ -972,6 +1062,55 @@ useEffect(() => {
             <span className="dot-online" />
             <span className="pos-header-status">
               {loadingProducts ? "Syncing catalog..." : "Catalog live"}
+            </span>
+            <span
+              style={{
+                display: "inline-flex",
+                alignItems: "center",
+                padding: "2px 10px",
+                borderRadius: 999,
+                fontSize: 12,
+                marginLeft: 10,
+                background:
+                  scaleStatus === "connected"
+                    ? "#e0fce5"
+                    : scaleStatus === "connecting"
+                    ? "#fef9c3"
+                    : "#fee2e2",
+                color:
+                  scaleStatus === "connected"
+                    ? "#059669"
+                    : scaleStatus === "connecting"
+                    ? "#a16207"
+                    : "#b91c1c",
+                border:
+                  "1px solid " +
+                  (scaleStatus === "connected"
+                    ? "#bbf7d0"
+                    : scaleStatus === "connecting"
+                    ? "#fde68a"
+                    : "#fecaca"),
+                fontWeight: 500,
+                minWidth: 0,
+                whiteSpace: "nowrap"
+              }}
+            >
+              {scaleStatus === "connected" ? (
+                <>
+                  <span style={{ fontSize: 14, marginRight: 4 }}>🟢</span>
+                  Scale connected
+                </>
+              ) : scaleStatus === "connecting" ? (
+                <>
+                  <span style={{ fontSize: 14, marginRight: 4 }}>🟡</span>
+                  Scale connecting
+                </>
+              ) : (
+                <>
+                  <span style={{ fontSize: 14, marginRight: 4 }}>🔴</span>
+                  Scale not connected
+                </>
+              )}
             </span>
           </div>
         </header>
@@ -993,6 +1132,10 @@ useEffect(() => {
           <div className="pos-shortcuts-item">
             <span className="pos-key-pill">F2</span>
             <span className="pos-key-desc">Jump to weight</span>
+          </div>
+          <div className="pos-shortcuts-item">
+            <span className="pos-key-pill">Space</span>
+            <span className="pos-key-desc">Lock/unlock weight (when weighing)</span>
           </div>
           <div className="pos-shortcuts-item">
             <span className="pos-key-pill">Ctrl + N</span>
@@ -1180,6 +1323,28 @@ useEffect(() => {
               </button>
             </div>
 
+            {/* Live weight display (always on) */}
+            <div
+              style={{
+                marginTop: 6,
+                marginBottom: 10,
+                padding: "8px 12px",
+                borderRadius: 10,
+                background: "#ecfeff",
+                border: "1px solid #67e8f9",
+                fontSize: 14,
+                fontWeight: 600,
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "space-between",
+              }}
+            >
+              <span>⚖ Live weight</span>
+              <span>
+                {liveWeightKg ? `${liveWeightKg} kg` : "—"}
+              </span>
+            </div>
+
             {/* Weigh & add panel (for scale workflow) */}
             <div
               style={{
@@ -1244,6 +1409,7 @@ useEffect(() => {
                       onClick={() => {
                         setActiveProduct(null);
                         setWeightKg("");
+                        setWeightLocked(false);
                       }}
                     >
                       Cancel
