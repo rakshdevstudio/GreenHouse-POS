@@ -4,6 +4,12 @@ const fs = require("fs");
 const os = require("os");
 const { SerialPort } = require("serialport");
 const { ReadlineParser } = require("@serialport/parser-readline");
+
+const WebSocket = require("ws");
+
+const BACKEND_WS_URL = "wss://greenhouse-pos-production.up.railway.app/ws";
+let backendWs = null;
+
 const { autoUpdater } = require("electron-updater");
 
 let mainWindow = null;
@@ -27,6 +33,52 @@ function notifyScaleStatus(status, info) {
       ts: Date.now(),
     });
   }
+}
+
+function connectBackendWS() {
+  if (backendWs) {
+    try { backendWs.close(); } catch (e) {}
+    backendWs = null;
+  }
+
+  console.log("🌐 Connecting to backend WS:", BACKEND_WS_URL);
+
+  backendWs = new WebSocket(BACKEND_WS_URL);
+
+  backendWs.on("open", () => {
+    console.log("🟢 Backend WS connected");
+  });
+
+  backendWs.on("message", (data) => {
+    try {
+      const msg = JSON.parse(data.toString());
+
+      if (msg.type === "scale" && typeof msg.weight_kg === "number") {
+        console.log("⚖️ Backend scale weight:", msg.weight_kg);
+
+        // Forward to renderer (POS UI)
+        if (mainWindow && mainWindow.webContents && !mainWindow.isDestroyed()) {
+          mainWindow.webContents.send("scale-data", {
+            source: "backend",
+            weightKg: msg.weight_kg,
+            ts: Date.now(),
+          });
+        }
+      }
+    } catch (err) {
+      console.warn("⚠️ Invalid WS message:", err.message);
+    }
+  });
+
+  backendWs.on("close", () => {
+    console.warn("⚠️ Backend WS disconnected, retrying in 3s");
+    setTimeout(connectBackendWS, 3000);
+  });
+
+  backendWs.on("error", (err) => {
+    console.error("❌ Backend WS error:", err.message);
+    try { backendWs.close(); } catch (e) {}
+  });
 }
 
 function createWindow() {
@@ -485,6 +537,7 @@ async function initScale() {
 app.whenReady().then(() => {
   createWindow();
   initScale();
+  connectBackendWS();
 
   // Heartbeat: periodically send the current scale status to the renderer
   scaleHeartbeatInterval = setInterval(() => {
@@ -530,5 +583,11 @@ app.on("before-quit", () => {
     } catch (e) {
       console.warn("Error closing scale port:", e);
     }
+  }
+  if (backendWs) {
+    try {
+      backendWs.close();
+    } catch (e) {}
+    backendWs = null;
   }
 });
