@@ -499,7 +499,10 @@ app.whenReady().then(() => {
 });
 
 ipcMain.handle("get-scale-status", async () => {
-  return { status: scaleStatus };
+  return {
+    status: scaleStatus,
+    ts: Date.now(),
+  };
 });
 
 app.on("window-all-closed", () => {
