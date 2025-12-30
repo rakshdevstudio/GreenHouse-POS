@@ -12,14 +12,20 @@
     "rebuild": "electron-rebuild",
     "postinstall": "electron-builder install-app-deps"
   },
-  "keywords": ["pos", "greenhouse", "retail", "weighing-scale"],
+  "keywords": [
+    "pos",
+    "greenhouse",
+    "retail",
+    "weighing-scale"
+  ],
   "author": "Raksh Dev Studio",
   "license": "ISC",
   "type": "commonjs",
   "dependencies": {
+    "@serialport/parser-readline": "^13.0.0",
     "electron-updater": "^6.6.2",
     "serialport": "^13.0.0",
-    "@serialport/parser-readline": "^13.0.0"
+    "ws": "^8.18.3"
   },
   "devDependencies": {
     "electron": "^33.2.0",
@@ -43,7 +49,9 @@
       "target": [
         {
           "target": "nsis",
-          "arch": ["x64"]
+          "arch": [
+            "x64"
+          ]
         }
       ]
     },
