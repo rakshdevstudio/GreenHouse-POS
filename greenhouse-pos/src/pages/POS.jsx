@@ -415,15 +415,17 @@
 useEffect(() => {
   if (typeof window === "undefined") return;
 
-  // Check if Electron scale API is available
-  if (window.electron && typeof window.electron.onScaleData === "function") {
-    console.info("POS: listening via electron.onScaleData");
+  let unsubscribe;
 
-    const unsubscribe = window.electron.onScaleData((raw) => {
-      console.log("📟 SCALE RAW:", raw);
+  // 🔹 NEW ELECTRON BRIDGE (preferred)
+  if (window.electron && typeof window.electron.onScaleData === "function") {
+    console.info("POS: listening via window.electron.onScaleData");
+
+    unsubscribe = window.electron.onScaleData((raw) => {
+      console.log("📟 SCALE RAW (electron):", raw);
       if (typeof raw !== "string") return;
 
-      const match = raw.match(/[-+]?\d*\.\d+|\d+/);
+      const match = raw.match(/[-+]?\d*\.?\d+/);
       if (!match) return;
 
       const w = parseFloat(match[0]);
@@ -431,13 +433,31 @@ useEffect(() => {
 
       setWeightKg(w.toFixed(3));
     });
-
-    return () => {
-      if (typeof unsubscribe === "function") unsubscribe();
-    };
-  } else {
-    console.warn("POS: Electron scale API not available. Are you running in Electron?");
   }
+
+  // 🔹 LEGACY FALLBACK (some builds exposed window.scale)
+  else if (window.scale && typeof window.scale.onData === "function") {
+    console.info("POS: listening via window.scale.onData (legacy)");
+
+    window.scale.onData((raw) => {
+      console.log("📟 SCALE RAW (legacy):", raw);
+      if (typeof raw !== "string") return;
+
+      const match = raw.match(/[-+]?\d*\.?\d+/);
+      if (!match) return;
+
+      const w = parseFloat(match[0]);
+      if (!Number.isFinite(w) || w <= 0) return;
+
+      setWeightKg(w.toFixed(3));
+    });
+  } else {
+    console.warn("POS: ❌ No Electron scale bridge found");
+  }
+
+  return () => {
+    if (typeof unsubscribe === "function") unsubscribe();
+  };
 }, []);
 
     // Dev helper: allow mocking the scale from browser console

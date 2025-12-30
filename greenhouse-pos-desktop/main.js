@@ -35,7 +35,7 @@ function createWindow() {
     mainWindow.webContents.openDevTools();
   }
 
-  if (!isDev) {
+  if (!isDev && process.env.ENABLE_UPDATES === "true") {
     autoUpdater.checkForUpdatesAndNotify();
   }
 }
@@ -295,12 +295,20 @@ async function initScale() {
     // Helper to try opening a specific port path
     function tryOpenPort(portPath) {
       return new Promise((resolve, reject) => {
+        const finalPath =
+          process.platform === "win32" && !portPath.startsWith("\\\\.\\")
+            ? `\\\\.\\${portPath}`
+            : portPath;
+
         const sp = new SerialPort({
-          path: portPath,
+          path: finalPath,
           baudRate: cfg.baudRate || 9600,
           dataBits: cfg.dataBits || 8,
           stopBits: cfg.stopBits || 1,
-          parity: cfg.parity || 'none',
+          parity: cfg.parity || "none",
+          rtscts: false,
+          xon: false,
+          xoff: false,
           autoOpen: false,
         });
 
@@ -388,10 +396,12 @@ async function initScale() {
     scalePort = openedPort;
 
     // Try both \r\n and \r delimiters (Essae scales may use either)
-    parser = scalePort.pipe(new ReadlineParser({ 
-      delimiter: /\r?\n/,
-      encoding: 'ascii'
-    }));
+    parser = scalePort.pipe(
+      new ReadlineParser({
+        delimiter: "\r",
+        encoding: "ascii",
+      })
+    );
 
     // Listen to parsed lines
     parser.on("data", (line) => {
@@ -410,7 +420,10 @@ async function initScale() {
         
         // Send raw line to renderer (existing renderer code parses it too)
         if (mainWindow && mainWindow.webContents && !mainWindow.isDestroyed()) {
-          mainWindow.webContents.send("scale-data", clean);
+          mainWindow.webContents.send("scale-data", {
+            raw: clean,
+            weightKg: Number(weightKg),
+          });
         }
       } else {
         console.log("⚠️ Could not parse weight from:", clean);
