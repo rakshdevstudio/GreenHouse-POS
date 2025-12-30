@@ -200,6 +200,16 @@ async function loginAdmin(arg1, arg2) {
   return res;
 }
 
+// GET /auth/terminals?username=store1
+async function listTerminals({ username }) {
+  if (!username) {
+    return { terminals: [] };
+  }
+
+  const qs = new URLSearchParams({ username }).toString();
+  return call(`/auth/terminals?${qs}`);
+}
+
 // Backwards-compatible alias so existing code using api.adminLogin still works
 async function adminLogin(arg1, arg2) {
   return loginAdmin(arg1, arg2);
@@ -495,6 +505,7 @@ const api = {
   loginStore,
   loginAdmin,
   adminLogin,
+  listTerminals,   // ✅ ADD THIS LINE
   // POS / store
   getProducts,
   createStoreProduct,
