@@ -430,6 +430,7 @@ useEffect(() => {
 
   let unsubscribe;
   let unsubscribeStatus;
+  let disconnectTimer;
 
   if (window.electron && typeof window.electron.onScaleStatus === "function") {
     unsubscribeStatus = window.electron.onScaleStatus((payload) => {
@@ -442,21 +443,39 @@ useEffect(() => {
   // 🔹 NEW ELECTRON BRIDGE (preferred)
   if (window.electron && typeof window.electron.onScaleData === "function") {
     console.info("POS: listening via window.electron.onScaleData");
-    unsubscribe = window.electron.onScaleData((raw) => {
-      console.log("📟 SCALE RAW (electron):", raw);
-      if (typeof raw !== "string") return;
 
-      const match = raw.match(/[-+]?\d*\.?\d+/);
-      if (!match) return;
+    // Auto-disconnect fallback: if no data in 3s, mark as disconnected
+    disconnectTimer = setTimeout(() => {
+      setScaleStatus("disconnected");
+    }, 3000);
 
-      const w = parseFloat(match[0]);
-      if (!Number.isFinite(w) || w <= 0) return;
+    unsubscribe = window.electron.onScaleData((payload) => {
+      console.log("📟 SCALE EVENT:", payload);
 
-      // 🔁 always update live weight
-      const formatted = w.toFixed(3);
+      // Accept BOTH backend + raw formats
+      let weight;
+
+      // Backend WS format: { source: "backend", weightKg }
+      if (payload && typeof payload === "object" && typeof payload.weightKg === "number") {
+        weight = payload.weightKg;
+      }
+      // Raw string format (serial fallback)
+      else if (typeof payload === "string") {
+        const match = payload.match(/[-+]?\d*\.?\d+/);
+        if (!match) return;
+        weight = parseFloat(match[0]);
+      }
+
+      if (!Number.isFinite(weight)) return;
+
+      const formatted = Number(weight).toFixed(3);
+
+      // 🔁 ALWAYS update live weight (even zero / minus)
       setLiveWeightKg(formatted);
+      setScaleStatus("connected");
+      clearTimeout(disconnectTimer);
 
-      // 🔒 if a product is active, lock this weight into the input
+      // 🔒 If weighing & not locked, auto-fill input
       if (activeProduct && !weightLocked) {
         setWeightKg(formatted);
       }
@@ -492,6 +511,7 @@ useEffect(() => {
   return () => {
     if (typeof unsubscribe === "function") unsubscribe();
     if (typeof unsubscribeStatus === "function") unsubscribeStatus();
+    clearTimeout(disconnectTimer);
   };
 }, [activeProduct, weightLocked]);
 
@@ -1007,27 +1027,40 @@ useEffect(() => {
             right: 16,
             zIndex: 1000,
             background: "#ffffff",
-            borderRadius: 12,
-            padding: "12px 16px",
-            minWidth: 160,
-            boxShadow: "0 8px 20px rgba(0,0,0,0.12)",
+            borderRadius: 14,
+            padding: "14px 18px",
+            minWidth: 200,
+            boxShadow: "0 10px 24px rgba(0,0,0,0.12)",
             border: "1px solid #e5e7eb",
             fontFamily: "inherit",
+            display: "flex",
+            flexDirection: "column",
+            alignItems: "center",
+            gap: 6,
           }}
         >
-          <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 4 }}>
-            ⚖ Live Weight
+          <div style={{ fontSize: 12, fontWeight: 600, color: "#475569" }}>
+            ⚖ LIVE WEIGHT
           </div>
-          <div style={{ fontSize: 24, fontWeight: 700, marginBottom: 6 }}>
+
+          <div
+            style={{
+              fontSize: 28,
+              fontWeight: 800,
+              letterSpacing: "0.5px",
+              color: "#0f172a",
+            }}
+          >
             {liveWeightKg ? `${liveWeightKg} kg` : "—"}
           </div>
+
           <button
             type="button"
             onClick={() => setWeightLocked((v) => !v)}
             style={{
-              marginTop: 6,
+              marginTop: 4,
               fontSize: 11,
-              padding: "4px 8px",
+              padding: "5px 10px",
               borderRadius: 999,
               border: "1px solid #cbd5f5",
               background: weightLocked ? "#fee2e2" : "#e0f2fe",
@@ -1036,9 +1069,10 @@ useEffect(() => {
               fontWeight: 600,
             }}
           >
-            {weightLocked ? "🔒 Weight locked" : "🔓 Lock weight"}
+            {weightLocked ? "🔒 Locked" : "🔓 Lock"}
           </button>
-          <div style={{ fontSize: 12, fontWeight: 500 }}>
+
+          <div style={{ fontSize: 12, fontWeight: 600, marginTop: 2 }}>
             {scaleStatus === "connected" ? (
               <span style={{ color: "#059669" }}>🟢 Connected</span>
             ) : scaleStatus === "connecting" ? (
