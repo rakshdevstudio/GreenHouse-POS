@@ -22,3 +22,18 @@ contextBridge.exposeInMainWorld("electron", {
     return ipcRenderer.invoke("print-receipt");
   }
 });
+
+// Expose debug PDF print helper
+contextBridge.exposeInMainWorld('electronDebug', {
+  printToPDF: async () => {
+    return ipcRenderer.invoke('debug-print-pdf');
+  }
+});
+
+// Allow passing HTML to print; if html provided, use dedicated print handler
+contextBridge.exposeInMainWorld('electron', Object.assign({}, window.electron || {}, {
+  print: async (html) => {
+    if (html) return ipcRenderer.invoke('print-receipt-html', html);
+    return ipcRenderer.invoke('print-receipt');
+  }
+}));

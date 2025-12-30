@@ -885,8 +885,10 @@ useEffect(() => {
         // 🔥 Auto-print immediately after checkout (Electron / Desktop)
         setTimeout(() => {
           try {
+            const receiptEl = document.querySelector('.receipt-preview');
+            const receiptHtml = receiptEl ? receiptEl.outerHTML : null;
             if (window.electron && window.electron.print) {
-              window.electron.print();
+              window.electron.print(receiptHtml);
             } else {
               window.print(); // browser fallback
             }
