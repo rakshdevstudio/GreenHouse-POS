@@ -246,34 +246,36 @@ let latestWeight = null;
 
 app.post('/scale/weight', (req, res) => {
   const w = Number(req.body && req.body.weight_kg);
+  const terminalId = req.body && req.body.terminal_id;
 
-  // ✅ allow ALL numeric values: zero / minus / pan empty
   if (!Number.isFinite(w)) {
     return res.status(400).json({ error: 'weight_kg must be a number' });
   }
+  if (!terminalId) {
+    return res.status(400).json({ error: 'terminal_id required' });
+  }
 
-  // keep latest value as-is (safe precision only)
   latestWeight = Number(w.toFixed(4));
 
-  // 🔥 broadcast to SSE listeners
-  scaleEmitter.emit('weight', latestWeight);
-
-  // 🔥 broadcast to WebSocket clients (Electron POS)
   const payload = JSON.stringify({
     type: 'scale',
     weight_kg: latestWeight,
+    terminal_id: terminalId,
     ts: Date.now(),
   });
 
   wss.clients.forEach((client) => {
-    if (client.readyState === WebSocket.OPEN) {
+    if (
+      client.readyState === WebSocket.OPEN &&
+      client.terminal_id === terminalId
+    ) {
       try {
         client.send(payload);
       } catch (e) {}
     }
   });
 
-  console.log('⚖️ Scale weight received:', latestWeight);
+  console.log(`⚖️ Scale ${terminalId}:`, latestWeight);
   return res.json({ ok: true, weight_kg: latestWeight });
 });
 
@@ -2341,8 +2343,10 @@ wss.on('connection', (ws, req) => {
   try {
     const u = new URL(req.url, `http://localhost`);
     ws._token = u.searchParams.get('token') || null;
+    ws.terminal_id = u.searchParams.get('terminal_id');
   } catch (e) {
     ws._token = null;
+    ws.terminal_id = null;
   }
 
   console.info('WS client connected', { remote: req.socket.remoteAddress, origin: req.headers.origin });
@@ -2360,6 +2364,7 @@ wss.on('connection', (ws, req) => {
   });
 
   ws.on('close', () => {
+    ws.terminal_id = null;
     // nothing to do for now
   });
 

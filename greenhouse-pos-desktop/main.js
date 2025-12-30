@@ -8,6 +8,7 @@ const { ReadlineParser } = require("@serialport/parser-readline");
 const WebSocket = require("ws");
 
 const BACKEND_WS_URL = "wss://greenhouse-pos-production.up.railway.app/ws";
+console.log("🏷 POS TERMINAL ID:", process.env.TERMINAL_ID || "STORE1-T1");
 let backendWs = null;
 
 const { autoUpdater } = require("electron-updater");
@@ -43,7 +44,11 @@ function connectBackendWS() {
 
   console.log("🌐 Connecting to backend WS:", BACKEND_WS_URL);
 
-  backendWs = new WebSocket(BACKEND_WS_URL);
+  const TERMINAL_ID = process.env.TERMINAL_ID || "STORE1-T1";
+
+  backendWs = new WebSocket(
+    `${BACKEND_WS_URL}?terminal_id=${encodeURIComponent(TERMINAL_ID)}`
+  );
 
   backendWs.on("open", () => {
     console.log("🟢 Backend WS connected");

@@ -5,6 +5,9 @@ import api from "../lib/api";
 export default function Login() {
   const [username, setUsername] = useState("store1");
   const [password, setPassword] = useState("");
+  const [terminalId, setTerminalId] = useState("");
+  const [terminals, setTerminals] = useState([]);
+  const [terminalsLoading, setTerminalsLoading] = useState(false);
   const [error, setError] = useState(null);
   const [loading, setLoading] = useState(false);
 
@@ -18,6 +21,37 @@ export default function Login() {
     }
   }, []);
 
+  useEffect(() => {
+    if (!username) return;
+
+    let cancelled = false;
+    setTerminalsLoading(true);
+
+    api
+      .listTerminals({ username })
+      .then((res) => {
+        if (cancelled) return;
+        const list = res?.terminals || [];
+        setTerminals(list);
+        if (list.length > 0) {
+          setTerminalId(String(list[0].terminal_id));
+        }
+      })
+      .catch((err) => {
+        if (!cancelled) {
+          console.error("terminal fetch error", err);
+          setTerminals([]);
+        }
+      })
+      .finally(() => {
+        if (!cancelled) setTerminalsLoading(false);
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [username]);
+
   async function submit(e) {
     e.preventDefault();
     setError(null);
@@ -27,12 +61,16 @@ export default function Login() {
       const res = await api.loginStore({
         username,
         password,
+        terminal_id: terminalId,
       });
 
       // api.loginStore already stores STORE_TOKEN & STORE_ID,
       // but we also safely set STORE_ID here if present
       if (res && res.store_id) {
         localStorage.setItem("STORE_ID", String(res.store_id));
+      }
+      if (terminalId) {
+        localStorage.setItem("TERMINAL_ID", String(terminalId));
       }
 
       // 🔁 Hard reload so App.jsx sees the token and switches to POS
@@ -84,6 +122,28 @@ export default function Login() {
                 onChange={(e) => setUsername(e.target.value)}
                 required
               />
+            </label>
+
+            <label className="form-label">
+              Terminal
+              <select
+                className="pos-input"
+                value={terminalId}
+                onChange={(e) => setTerminalId(e.target.value)}
+                disabled={terminalsLoading || terminals.length === 0}
+                required
+              >
+                {terminalsLoading && <option>Loading terminals…</option>}
+                {!terminalsLoading && terminals.length === 0 && (
+                  <option value="">No terminals found</option>
+                )}
+                {!terminalsLoading &&
+                  terminals.map((t) => (
+                    <option key={t.terminal_id} value={t.terminal_id}>
+                      {t.name || `Terminal ${t.terminal_id}`}
+                    </option>
+                  ))}
+              </select>
             </label>
 
             <label className="form-label">
