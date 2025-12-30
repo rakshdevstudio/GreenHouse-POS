@@ -5,7 +5,7 @@ import api from "../lib/api";
 export default function Login() {
   const [username, setUsername] = useState("store1");
   const [password, setPassword] = useState("");
-  const [terminalId, setTerminalId] = useState("");
+  const [terminalUuid, setTerminalUuid] = useState("");
   const [terminals, setTerminals] = useState([]);
   const [terminalsLoading, setTerminalsLoading] = useState(false);
   const [error, setError] = useState(null);
@@ -27,7 +27,7 @@ export default function Login() {
 
     let cancelled = false;
     setTerminals([]);
-    setTerminalId("");
+    setTerminalUuid("");
     setTerminalsLoading(true);
 
     if (typeof api.listTerminals !== "function") {
@@ -43,7 +43,7 @@ export default function Login() {
         const list = Array.isArray(res?.terminals) ? res.terminals : [];
         setTerminals(list);
         if (list.length > 0) {
-          setTerminalId(String(list[0].terminal_id));
+          setTerminalUuid(list[0].terminal_uuid);
         }
       })
       .catch((err) => {
@@ -66,7 +66,7 @@ export default function Login() {
     e.preventDefault();
     setError(null);
 
-    if (!terminalId) {
+    if (!terminalUuid) {
       setError("Please select a terminal");
       return;
     }
@@ -77,14 +77,14 @@ export default function Login() {
       const res = await api.loginStore({
         username,
         password,
-        terminal_id: terminalId,
+        terminal_uuid: terminalUuid,
       });
 
       if (res?.store_id) {
         localStorage.setItem("STORE_ID", String(res.store_id));
       }
 
-      localStorage.setItem("TERMINAL_ID", String(terminalId));
+      localStorage.setItem("TERMINAL_UUID", terminalUuid);
 
       // Hard reload so App.jsx switches to POS
       window.location.reload();
@@ -133,8 +133,8 @@ export default function Login() {
               Terminal
               <select
                 className="pos-input"
-                value={terminalId}
-                onChange={(e) => setTerminalId(e.target.value)}
+                value={terminalUuid}
+                onChange={(e) => setTerminalUuid(e.target.value)}
                 disabled={terminalsLoading}
                 required
               >
@@ -144,8 +144,8 @@ export default function Login() {
                 )}
                 {!terminalsLoading &&
                   terminals.map((t) => (
-                    <option key={t.terminal_id} value={t.terminal_id}>
-                      {t.name || `Terminal ${t.terminal_id}`}
+                    <option key={t.terminal_uuid} value={t.terminal_uuid}>
+                      {t.label || t.terminal_uuid}
                     </option>
                   ))}
               </select>
