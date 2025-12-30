@@ -11,6 +11,8 @@ let scalePort = null;
 let parser = null;
 let isDev = !app.isPackaged;
 
+let scaleInitializing = false;
+
 function createWindow() {
   mainWindow = new BrowserWindow({
     width: 1200,
@@ -206,6 +208,8 @@ function parseEssaeWeight(raw) {
 
 // Initialize scale connection
 async function initScale() {
+  if (scaleInitializing) return;
+  scaleInitializing = true;
   try {
     // Load optional config file (scale-config.json) next to this main.js
     const defaultCfg = {
@@ -301,7 +305,9 @@ async function initScale() {
         });
 
         const onError = (err) => {
-          try { sp.close(); } catch (e) {}
+          if (sp.isOpen === true) {
+            try { sp.close(); } catch (e) {}
+          }
           reject(err);
         };
 
@@ -413,18 +419,25 @@ async function initScale() {
 
     scalePort.on("error", (err) => {
       console.error("❌ Scale error:", err.message);
+      if (scalePort && scalePort.isOpen === true) {
+        try { scalePort.close(); } catch (e) {}
+      }
     });
 
     scalePort.on("close", () => {
       console.warn("⚠️ Scale disconnected. Reconnecting in 3 seconds...");
       scalePort = null;
       parser = null;
-      setTimeout(initScale, 3000);
+      setTimeout(() => {
+        if (!app.isQuiting) initScale();
+      }, 3000);
     });
 
   } catch (err) {
     console.error("❌ Scale init exception:", err.message);
     setTimeout(initScale, 3000);
+  } finally {
+    scaleInitializing = false;
   }
 }
 
@@ -442,11 +455,12 @@ app.whenReady().then(() => {
 
 app.on("window-all-closed", () => {
   if (process.platform !== "darwin") {
-    if (scalePort && scalePort.isOpen) {
+    if (scalePort && scalePort.isOpen === true) {
+      scalePort.removeAllListeners();
       try {
         scalePort.close();
       } catch (e) {
-        console.warn("Error closing scale port:", e);
+        console.warn("⚠️ Scale close skipped:", e.message);
       }
     }
     app.quit();
