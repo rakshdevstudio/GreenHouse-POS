@@ -14,6 +14,9 @@ let isDev = !app.isPackaged;
 let scaleInitializing = false;
 let scaleStatus = "disconnected"; // disconnected | connecting | connected
 
+// Heartbeat interval for scale status reporting
+let scaleHeartbeatInterval = null;
+
 function notifyScaleStatus(status, info) {
   scaleStatus = status;
   console.log("📡 SCALE STATUS:", status, info || "");
@@ -39,6 +42,11 @@ function createWindow() {
   });
 
   mainWindow.loadURL("https://green-house-pos.vercel.app/");
+
+  // After the window loads, immediately send the current scale status to the renderer
+  mainWindow.webContents.once("did-finish-load", () => {
+    notifyScaleStatus(scaleStatus);
+  });
 
   mainWindow.once("ready-to-show", () => {
     mainWindow.show();
@@ -478,6 +486,11 @@ app.whenReady().then(() => {
   createWindow();
   initScale();
 
+  // Heartbeat: periodically send the current scale status to the renderer
+  scaleHeartbeatInterval = setInterval(() => {
+    notifyScaleStatus(scaleStatus);
+  }, 5000);
+
   app.on("activate", () => {
     if (BrowserWindow.getAllWindows().length === 0) {
       createWindow();
@@ -504,6 +517,10 @@ app.on("window-all-closed", () => {
 });
 
 app.on("before-quit", () => {
+  if (scaleHeartbeatInterval) {
+    clearInterval(scaleHeartbeatInterval);
+    scaleHeartbeatInterval = null;
+  }
   if (scalePort && scalePort.isOpen) {
     try {
       scalePort.close();
