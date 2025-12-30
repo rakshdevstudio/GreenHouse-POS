@@ -30,12 +30,6 @@ export default function Login() {
     setTerminalUuid("");
     setTerminalsLoading(true);
 
-    if (typeof api.listTerminals !== "function") {
-      console.warn("listTerminals API not available");
-      setTerminalsLoading(false);
-      return;
-    }
-
     api
       .listTerminals({ username })
       .then((res) => {
