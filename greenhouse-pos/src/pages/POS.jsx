@@ -519,24 +519,6 @@ useEffect(() => {
   };
 }, [activeProduct, weightLocked]);
 
-    // Dev helper: allow mocking the scale from browser console
-    useEffect(() => {
-      if (typeof window === "undefined") return;
-
-      // Call: window.scaleMock(0.8567)
-      window.scaleMock = (w) => {
-        return api.scaleMock(w).catch((err) => {
-          console.error("scaleMock failed", err);
-        });
-      };
-
-      // Cleanup on unmount
-      return () => {
-        if (window.scaleMock) {
-          delete window.scaleMock;
-        }
-      };
-    }, []);
 
     // ---------- Cart helpers ----------
 
