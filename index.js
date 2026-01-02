@@ -292,13 +292,13 @@ app.get('/admin/stores', requireAdmin, async (req, res) => {
 // to WebSocket listeners for the correct terminal.
 app.post('/scale/weight', (req, res) => {
   const w = Number(req.body && req.body.weight_kg);
-  const terminalId = req.body && req.body.terminal_id;
+  const terminalUuid = req.body && req.body.terminal_uuid;
 
   if (!Number.isFinite(w)) {
     return res.status(400).json({ error: 'weight_kg must be a number' });
   }
-  if (!terminalId) {
-    return res.status(400).json({ error: 'terminal_id required' });
+  if (!terminalUuid) {
+    return res.status(400).json({ error: 'terminal_uuid required' });
   }
 
   const latestWeight = Number(w.toFixed(4));
@@ -306,14 +306,14 @@ app.post('/scale/weight', (req, res) => {
   const payload = JSON.stringify({
     type: 'scale',
     weight_kg: latestWeight,
-    terminal_id: terminalId,
+    terminal_uuid: terminalUuid,
     ts: Date.now(),
   });
 
   wss.clients.forEach((client) => {
     if (
       client.readyState === WebSocket.OPEN &&
-      client.terminal_id === terminalId
+      client.terminal_uuid === terminalUuid
     ) {
       try {
         client.send(payload);
@@ -321,8 +321,8 @@ app.post('/scale/weight', (req, res) => {
     }
   });
 
-  console.log(`⚖️ Scale ${terminalId}:`, latestWeight);
-  return res.json({ ok: true, weight_kg: latestWeight });
+  console.log(`⚖️ Scale ${terminalUuid}:`, latestWeight);
+  return res.json({ ok: true });
 });
 
 
@@ -2348,17 +2348,17 @@ wss.on('connection', (ws, req) => {
   // attempt to read token from querystring (non-blocking)
   try {
     const u = new URL(req.url, 'http://localhost');
-    const terminalId = u.searchParams.get('terminal_id');
+    const terminalUuid = u.searchParams.get('terminal_uuid');
 
-    if (!terminalId) {
-      ws.close(1008, 'terminal_id required');
+    if (!terminalUuid) {
+      ws.close(1008, 'terminal_uuid required');
       return;
     }
 
-    ws.terminal_id = terminalId;
-    console.log('🟢 WS connected → terminal', terminalId);
+    ws.terminal_uuid = terminalUuid;
+    console.log('🟢 WS connected → terminal', terminalUuid);
   } catch (e) {
-    ws.terminal_id = null;
+    ws.terminal_uuid = null;
   }
 
   console.info('WS client connected', { remote: req.socket.remoteAddress, origin: req.headers.origin });
@@ -2376,7 +2376,7 @@ wss.on('connection', (ws, req) => {
   });
 
   ws.on('close', () => {
-    ws.terminal_id = null;
+    ws.terminal_uuid = null;
     // nothing to do for now
   });
 
