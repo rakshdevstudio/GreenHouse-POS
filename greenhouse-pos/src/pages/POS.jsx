@@ -41,6 +41,11 @@
     const [manualStock, setManualStock] = useState("");
     const [manualSaving, setManualSaving] = useState(false);
 
+    // Terminal binding (MUST be explicit)
+    const [terminalUuid, setTerminalUuid] = useState(
+      () => localStorage.getItem("TERMINAL_UUID") || null
+    );
+
     // Offline support: localStorage keys
       // Compute a per-store products cache key so each store has its own offline catalog
     function getOfflineProductsKey() {
@@ -206,6 +211,14 @@
       // eslint-disable-next-line react-hooks/exhaustive-deps
     }, []);
 
+    // Ensure POS always has an explicit terminal selected
+    useEffect(() => {
+      const t = localStorage.getItem("TERMINAL_UUID");
+      if (t && t !== terminalUuid) {
+        setTerminalUuid(t);
+      }
+    }, [terminalUuid]);
+
     // Multi-terminal sync: prefer WebSocket for live updates, fallback to polling only if WS cannot connect
     const wsRef = useRef(null);
     const wsReconnectRef = useRef({ attempt: 0, timer: null, shouldReconnect: true });
@@ -253,7 +266,7 @@
             }
           } catch (e) { /* ignore */ }
 
-                  const base = getApiBase(); // expected: full origin like "https://example.com" or "http://localhost:8080"
+          const base = getApiBase(); // expected: full origin like "https://example.com" or "http://localhost:8080"
           let origin = '';
           try {
             const parsed = new URL(base);
@@ -268,8 +281,17 @@
           const host = origin.replace(/^https?:/, ''); // //host[:port]
 
           const token = localStorage.getItem('TOKEN') || localStorage.getItem('AUTH_TOKEN') || '';
-          const url = `${scheme}${host}/ws${token ? '?token=' + encodeURIComponent(token) : ''}`;
 
+          if (!terminalUuid) {
+            console.warn("POS: ❌ terminalUuid missing, WS not connected");
+            return;
+          }
+
+          const url =
+            `${scheme}${host}/ws?terminal_uuid=${encodeURIComponent(terminalUuid)}` +
+            (token ? `&token=${encodeURIComponent(token)}` : "");
+
+          setScaleStatus("connecting");
           const ws = new WebSocket(url);
           wsRef.current = ws;
           // allow reconnects by default; will be reset on unmount
@@ -280,6 +302,7 @@
             clearReconnect();
             // reset attempt counter
             wsReconnectRef.current.attempt = 0;
+            setScaleStatus("connected");
           };
 
           ws.onmessage = (evt) => {
@@ -287,6 +310,21 @@
             try {
               const msg = JSON.parse(evt.data);
               if (!msg) return;
+
+              // Enforce terminal_uuid match for scale messages
+              if (msg.terminal_uuid && msg.terminal_uuid !== terminalUuid) return;
+
+              if (msg.type === "scale") {
+                if (window.electron) return; // Electron owns scale on desktop
+                if (typeof msg.weight_kg === "number") {
+                  setLiveWeightKg(Number(msg.weight_kg).toFixed(3));
+                  setScaleStatus("connected");
+                  if (activeProduct && !weightLocked) {
+                    setWeightKg(Number(msg.weight_kg).toFixed(3));
+                  }
+                }
+                return;
+              }
 
               if (msg.type === 'invoice_created') {
                 console.info('POS: ws invoice_created event', msg.invoice && msg.invoice.id);
@@ -304,6 +342,7 @@
 
           ws.onclose = (ev) => {
             console.warn('POS: ws closed', ev && ev.code, ev && ev.reason);
+            setScaleStatus("disconnected");
             // Only schedule reconnect if we didn't intentionally close (e.g., unmount)
             if (!mounted || !wsReconnectRef.current.shouldReconnect) return;
             scheduleReconnect();
@@ -311,6 +350,7 @@
 
           ws.onerror = (err) => {
             console.warn('POS: ws error', err && err.message);
+            setScaleStatus("disconnected");
             // close socket to trigger onclose and reconnect logic
             try { ws.close(); } catch (e) {}
           };
@@ -336,7 +376,7 @@
         clearReconnect();
       };
       // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, []);
+    }, [terminalUuid]);
 
     // Focus search on first load for quick keyboard billing
   useEffect(() => {
@@ -424,100 +464,77 @@
       setFocusQtyForId(null);
     }, [focusQtyForId, cart.length]);
 
-// Subscribe to weighing scale stream (Electron ONLY)
+// Subscribe to weighing scale stream (WebSocket for scale)
 useEffect(() => {
-  if (typeof window === "undefined") return;
+  const terminalUuid = localStorage.getItem("TERMINAL_UUID");
 
-  let unsubscribe;
-  let unsubscribeStatus;
-  // Robust disconnect detection using interval watchdog
-  let watchdog;
-  let lastScaleEventAt = Date.now();
-
-  if (window.electron && typeof window.electron.onScaleStatus === "function") {
-    unsubscribeStatus = window.electron.onScaleStatus((payload) => {
-      if (payload && payload.status) {
-        setScaleStatus(payload.status);
-      }
-    });
+  if (!terminalUuid) {
+    console.warn("No terminal_uuid → scale disabled");
+    return;
   }
 
-  // 🔹 NEW ELECTRON BRIDGE (preferred)
-  if (window.electron && typeof window.electron.onScaleData === "function") {
-    console.info("POS: listening via window.electron.onScaleData");
+  // 🔴 ADMIN TERMINALS MUST NOT RECEIVE SCALE
+  if (terminalUuid.startsWith("admin-")) {
+    console.log("Admin terminal — scale disabled");
+    return;
+  }
 
-    unsubscribe = window.electron.onScaleData((payload) => {
-      lastScaleEventAt = Date.now();
-      console.log("📟 SCALE EVENT:", payload);
+  // 🔒 Electron owns scale on desktop
+  if (window.electron) {
+    console.log("Electron detected → backend scale WS disabled");
+    return;
+  }
 
-      // Accept BOTH backend + raw formats
-      let weight;
+  const origin = window.location.origin;
+  const WS_URL = origin.startsWith("https")
+    ? origin.replace(/^https/, "wss")
+    : origin.replace(/^http/, "ws");
 
-      // Backend WS format: { source: "backend", weightKg }
-      if (payload && typeof payload === "object" && typeof payload.weightKg === "number") {
-        weight = payload.weightKg;
+  const ws = new WebSocket(
+    `${WS_URL}/ws?terminal_uuid=${encodeURIComponent(terminalUuid)}`
+  );
+
+  wsRef.current = ws;
+
+  ws.onopen = () => {
+    console.log("🟢 Scale WS connected:", terminalUuid);
+    setScaleStatus("connected");
+  };
+
+  ws.onmessage = (event) => {
+    try {
+      const data = JSON.parse(event.data);
+      if (data.type !== "scale") return;
+
+      // 🔒 HARD TERMINAL FILTER
+      if (
+        data.terminal_uuid &&
+        data.terminal_uuid !== terminalUuid
+      ) {
+        return;
       }
-      // Raw string format (serial fallback)
-      else if (typeof payload === "string") {
-        const match = payload.match(/[-+]?\d*\.?\d+/);
-        if (!match) return;
-        weight = parseFloat(match[0]);
-      }
 
-      if (!Number.isFinite(weight)) return;
-
-      const formatted = Number(weight).toFixed(3);
-
-      // 🔁 ALWAYS update live weight (even zero / minus)
-      setLiveWeightKg(formatted);
+      setLiveWeightKg(Number(data.weight_kg).toFixed(3));
+      lastWeightTsRef.current = Date.now();
       setScaleStatus("connected");
+    } catch (e) {
+      console.error("Scale WS parse error", e);
+    }
+  };
 
-      // 🔒 If weighing & not locked, auto-fill input
-      if (activeProduct && !weightLocked) {
-        setWeightKg(formatted);
-      }
-    });
+  ws.onerror = () => {
+    setScaleStatus("error");
+  };
 
-    // Watchdog: check for disconnect every second
-    watchdog = setInterval(() => {
-      if (Date.now() - lastScaleEventAt > 3000) {
-        setScaleStatus("disconnected");
-      }
-    }, 1000);
-  }
-
-  // 🔹 LEGACY FALLBACK (some builds exposed window.scale)
-  else if (window.scale && typeof window.scale.onData === "function") {
-    console.info("POS: listening via window.scale.onData (legacy)");
-    window.scale.onData((raw) => {
-      console.log("📟 SCALE RAW (legacy):", raw);
-      if (typeof raw !== "string") return;
-
-      const match = raw.match(/[-+]?\d*\.?\d+/);
-      if (!match) return;
-
-      const w = parseFloat(match[0]);
-      if (!Number.isFinite(w) || w <= 0) return;
-
-      // 🔁 always update live weight
-      const formatted = w.toFixed(3);
-      setLiveWeightKg(formatted);
-
-      // 🔒 if a product is active, lock this weight into the input
-      if (activeProduct && !weightLocked) {
-        setWeightKg(formatted);
-      }
-    });
-  } else {
-    console.warn("POS: ❌ No Electron scale bridge found");
-  }
+  ws.onclose = () => {
+    console.log("🔴 Scale WS closed");
+    setScaleStatus("disconnected");
+  };
 
   return () => {
-    if (typeof unsubscribe === "function") unsubscribe();
-    if (typeof unsubscribeStatus === "function") unsubscribeStatus();
-    if (watchdog) clearInterval(watchdog);
+    ws.close();
   };
-}, [activeProduct, weightLocked]);
+}, []);
 
 
     // ---------- Cart helpers ----------
