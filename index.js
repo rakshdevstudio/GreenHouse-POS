@@ -4,7 +4,6 @@ const express = require('express');
 const { Pool } = require('pg');
 const cors = require('cors');
 const { v4: uuidv4 } = require('uuid');
-const { EventEmitter } = require('events');
 const http = require('http');
 
 const bcrypt = require('bcryptjs');
@@ -14,16 +13,11 @@ const WebSocket = require('ws');
 const app = express();
 
 // ---- Simple scale event bus ----
-const scaleEmitter = new EventEmitter();
+
 
 // Optional: simple mock generator so UI can be tested without real scale.
 // Enable by: MOCK_SCALE=1 in your .env or `export MOCK_SCALE=1`
-if (process.env.MOCK_SCALE === '1') {
-  setInterval(() => {
-    const w = Number((Math.random() * 3).toFixed(3)); // 0–3 kg
-    scaleEmitter.emit('weight', w);
-  }, 5000);
-}
+
 
 // --- CORS: friendly dev defaults ---
 // Allow Vite dev servers on 5173 and 5174 and also allow non-browser requests (curl, server-to-server).
@@ -295,9 +289,7 @@ app.get('/admin/stores', requireAdmin, async (req, res) => {
 // ---- Scale input endpoint (from local scale bridge) ----
 // This endpoint is called by scale-bridge.exe running on the Windows machine.
 // It receives weight from the physical weighing scale and emits it
-// to SSE + WebSocket listeners via scaleEmitter.
-let latestWeight = null;
-
+// to WebSocket listeners for the correct terminal.
 app.post('/scale/weight', (req, res) => {
   const w = Number(req.body && req.body.weight_kg);
   const terminalId = req.body && req.body.terminal_id;
@@ -309,7 +301,7 @@ app.post('/scale/weight', (req, res) => {
     return res.status(400).json({ error: 'terminal_id required' });
   }
 
-  latestWeight = Number(w.toFixed(4));
+  const latestWeight = Number(w.toFixed(4));
 
   const payload = JSON.stringify({
     type: 'scale',
@@ -333,49 +325,9 @@ app.post('/scale/weight', (req, res) => {
   return res.json({ ok: true, weight_kg: latestWeight });
 });
 
-// Optional pull-style endpoint (for polling fallback)
-app.get('/scale/latest', (req, res) => {
-  res.json({ weight_kg: latestWeight });
-});
-// ---- Scale live stream (SSE) ----
-app.get('/scale/stream', (req, res) => {
-  res.setHeader('Content-Type', 'text/event-stream');
-  res.setHeader('Cache-Control', 'no-cache');
-  res.setHeader('Connection', 'keep-alive');
-
-  // Allow frontend origin for SSE as well (in addition to global CORS middleware)
-  const origin = req.headers.origin;
-  if (origin) {
-    res.setHeader('Access-Control-Allow-Origin', origin);
-    res.setHeader('Access-Control-Allow-Credentials', 'true');
-  }
-
-  // initial hello packet
-  res.write(`data: ${JSON.stringify({ hello: true, ts: Date.now() })}\n\n`);
-
-  const onWeight = (w) => {
-    const payload = { weight_kg: w, ts: Date.now() };
-    res.write(`data: ${JSON.stringify(payload)}\n\n`);
-  };
-
-  scaleEmitter.on('weight', onWeight);
-
-  req.on('close', () => {
-    scaleEmitter.off('weight', onWeight);
-    res.end();
-  });
-});
 
 // Debug endpoint: POST /scale/mock { "weight_kg": 1.2345 }
-app.post('/scale/mock', (req, res) => {
-  const w = Number(req.body.weight_kg);
-  if (!Number.isFinite(w) || w <= 0) {
-    return res.status(400).json({ error: 'Invalid weight_kg' });
-  }
-  const rounded = Number(w.toFixed(4));
-  scaleEmitter.emit('weight', rounded);
-  return res.json({ ok: true, weight_kg: rounded });
-});
+
 
 // Simple products endpoint (scoped by store session or admin)
 app.get('/products', requireStoreOrAdmin, async (req, res) => {
@@ -2395,11 +2347,17 @@ wss.on('connection', (ws, req) => {
 
   // attempt to read token from querystring (non-blocking)
   try {
-    const u = new URL(req.url, `http://localhost`);
-    ws._token = u.searchParams.get('token') || null;
-    ws.terminal_id = u.searchParams.get('terminal_id');
+    const u = new URL(req.url, 'http://localhost');
+    const terminalId = u.searchParams.get('terminal_id');
+
+    if (!terminalId) {
+      ws.close(1008, 'terminal_id required');
+      return;
+    }
+
+    ws.terminal_id = terminalId;
+    console.log('🟢 WS connected → terminal', terminalId);
   } catch (e) {
-    ws._token = null;
     ws.terminal_id = null;
   }
 
@@ -2436,7 +2394,6 @@ const wsInterval = setInterval(() => {
     try { ws.ping(noop); } catch (e) { try { ws.terminate(); } catch (e2) {} }
   });
 }, 30 * 1000);
-
 // Helper: broadcast new invoice event to all connected WS clients (safe JSON)
 function broadcastNewInvoice(invoice) {
   if (!invoice) return;
