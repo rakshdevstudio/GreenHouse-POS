@@ -200,13 +200,13 @@ app.get('/auth/terminals', async (req, res) => {
     // 2. Fetch ONLY valid counter/admin terminals for store
     let termRes = await client.query(
       `SELECT id AS terminal_id, terminal_uuid, label
-         FROM terminals
-        WHERE store_id = $1
-          AND (
-            terminal_uuid LIKE 's%-c%' OR
-            terminal_uuid LIKE 'admin-%'
-          )
-        ORDER BY terminal_uuid ASC`,
+FROM terminals
+WHERE store_id = $1
+  AND (
+    terminal_uuid LIKE 's%-c%' OR
+    terminal_uuid LIKE 'admin-%'
+  )
+ORDER BY terminal_uuid ASC`,
       [storeId]
     );
 
