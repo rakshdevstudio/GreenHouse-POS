@@ -295,9 +295,12 @@ app.get('/admin/stores', requireAdmin, async (req, res) => {
 // It receives weight from the physical weighing scale and emits it
 // to WebSocket listeners for the correct terminal.
 app.post('/scale/weight', (req, res) => {
+  // Always expect terminal_uuid; fallback to terminal_id for legacy payloads
   const rawTerminal =
     typeof req.body?.terminal_uuid === 'string'
       ? req.body.terminal_uuid.trim()
+      : typeof req.body?.terminal_id === 'string'
+      ? req.body.terminal_id.trim()
       : null;
 
   const rawWeight = req.body?.weight_kg;
@@ -322,9 +325,11 @@ app.post('/scale/weight', (req, res) => {
 
   const latestWeight = Number(weight.toFixed(3));
 
+  // Always include terminal_uuid, and terminal_id for backward compatibility.
   const payload = JSON.stringify({
     type: 'scale',
     terminal_uuid: terminalUuid,
+    terminal_id: terminalUuid, // backward compatibility: send as id too
     weight_kg: latestWeight,
     ts: Date.now(),
   });
