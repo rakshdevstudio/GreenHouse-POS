@@ -37,12 +37,18 @@ export default function Login() {
         if (cancelled) return;
         const list = Array.isArray(res?.terminals)
           ? res.terminals.filter(
-              (t) => !t.terminal_uuid?.startsWith("admin-")
+              (t) =>
+                typeof t.terminal_uuid === "string" &&
+                t.terminal_uuid.startsWith("s")
             )
           : [];
+
         setTerminals(list);
+
         if (list.length > 0) {
           setTerminalUuid(list[0].terminal_uuid);
+        } else {
+          setTerminalUuid("");
         }
       })
       .catch((err) => {
