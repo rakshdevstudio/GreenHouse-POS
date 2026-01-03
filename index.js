@@ -295,28 +295,28 @@ app.get('/admin/stores', requireAdmin, async (req, res) => {
 // It receives weight from the physical weighing scale and emits it
 // to WebSocket listeners for the correct terminal.
 app.post('/scale/weight', (req, res) => {
-  const terminalUuid =
+  const rawTerminal =
     typeof req.body?.terminal_uuid === 'string'
       ? req.body.terminal_uuid.trim()
       : null;
 
-  const raw = req.body?.weight_kg;
-  const weight = Number(raw);
+  const rawWeight = req.body?.weight_kg;
+  const weight = Number(rawWeight);
 
-  // terminal_uuid is mandatory
-  if (!terminalUuid) {
+  if (!rawTerminal) {
     console.warn('❌ scale/weight rejected: missing terminal_uuid', req.body);
     return res.status(400).json({ error: 'terminal_uuid required' });
   }
 
-  // block admin / virtual terminals
+  const terminalUuid = rawTerminal.toLowerCase();
+
+  // Block admin / virtual terminals
   if (terminalUuid.startsWith('admin-')) {
     return res.json({ ok: true, ignored: 'admin terminal' });
   }
 
-  // weight must be numeric (allow negative / zero)
   if (!Number.isFinite(weight)) {
-    console.warn('❌ scale/weight rejected: invalid weight', raw);
+    console.warn('❌ scale/weight rejected: invalid weight', rawWeight);
     return res.status(400).json({ error: 'weight_kg must be a number' });
   }
 
@@ -330,20 +330,41 @@ app.post('/scale/weight', (req, res) => {
   });
 
   let delivered = 0;
+  let openClients = 0;
 
+  // First pass: exact terminal match
   wss.clients.forEach((client) => {
-    if (
-      client.readyState === WebSocket.OPEN &&
-      client.terminal_uuid === terminalUuid
-    ) {
-      try {
-        client.send(payload);
-        delivered++;
-      } catch (e) {
-        console.warn('WS send failed', e.message);
+    if (client.readyState === WebSocket.OPEN) {
+      openClients++;
+      if (
+        client.terminal_uuid &&
+        client.terminal_uuid === terminalUuid
+      ) {
+        try {
+          client.send(payload);
+          delivered++;
+        } catch (e) {
+          console.warn('WS send failed', e.message);
+        }
       }
     }
   });
+
+  // Safety fallback: do NOT silently drop data
+  if (delivered === 0 && openClients > 0) {
+    console.warn(
+      `⚠️ scale ${terminalUuid}: no exact WS match, fallback broadcast`
+    );
+
+    wss.clients.forEach((client) => {
+      if (client.readyState === WebSocket.OPEN) {
+        try {
+          client.send(payload);
+          delivered++;
+        } catch (e) {}
+      }
+    });
+  }
 
   console.log(
     `⚖️ scale ${terminalUuid}: ${latestWeight} kg → ${delivered} client(s)`
@@ -2386,7 +2407,7 @@ wss.on('connection', (ws, req) => {
       return;
     }
 
-    ws.terminal_uuid = terminalUuid;
+    ws.terminal_uuid = terminalUuid.toLowerCase();
     console.log('🟢 WS connected → terminal', terminalUuid);
   } catch (e) {
     ws.terminal_uuid = null;
