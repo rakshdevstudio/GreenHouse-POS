@@ -221,6 +221,7 @@
 
     // Multi-terminal sync: prefer WebSocket for live updates, fallback to polling only if WS cannot connect
     const wsRef = useRef(null);
+    const lastWeightTsRef = useRef(0);
     const wsReconnectRef = useRef({ attempt: 0, timer: null, shouldReconnect: true });
     const lastRefreshRef = useRef(0); // debounces catalog refreshes (ms)
 
@@ -302,7 +303,7 @@
             clearReconnect();
             // reset attempt counter
             wsReconnectRef.current.attempt = 0;
-            setScaleStatus("connected");
+            setScaleStatus("connecting");
           };
 
           ws.onmessage = (evt) => {
@@ -315,17 +316,19 @@
               if (msg.terminal_uuid && msg.terminal_uuid !== terminalUuid) return;
 
               if (msg.type === "scale") {
-                if (window.electron) return; // Electron owns scale on desktop
+                if (!msg.terminal_uuid || msg.terminal_uuid !== terminalUuid) return;
                 if (typeof msg.weight_kg === "number") {
-                  setLiveWeightKg(Number(msg.weight_kg).toFixed(3));
+                  const w = Number(msg.weight_kg).toFixed(3);
+                  setLiveWeightKg(w);
+                  lastWeightTsRef.current = Date.now();
                   setScaleStatus("connected");
+
                   if (activeProduct && !weightLocked) {
-                    setWeightKg(Number(msg.weight_kg).toFixed(3));
+                    setWeightKg(w);
                   }
                 }
                 return;
               }
-
               if (msg.type === 'invoice_created') {
                 console.info('POS: ws invoice_created event', msg.invoice && msg.invoice.id);
                 // update lastInvoice if payload present
@@ -339,6 +342,19 @@
               console.warn('ws message parse error', err);
             }
           };
+    // Detect scale disconnects based on heartbeat
+    useEffect(() => {
+      const timer = setInterval(() => {
+        if (
+          scaleStatus === "connected" &&
+          Date.now() - lastWeightTsRef.current > 3000
+        ) {
+          setScaleStatus("disconnected");
+        }
+      }, 1000);
+
+      return () => clearInterval(timer);
+    }, [scaleStatus]);
 
           ws.onclose = (ev) => {
             console.warn('POS: ws closed', ev && ev.code, ev && ev.reason);
@@ -463,78 +479,6 @@
       // reset so future clicks can trigger it again
       setFocusQtyForId(null);
     }, [focusQtyForId, cart.length]);
-
-// Subscribe to weighing scale stream (WebSocket for scale)
-useEffect(() => {
-  const terminalUuid = localStorage.getItem("TERMINAL_UUID");
-
-  if (!terminalUuid) {
-    console.warn("No terminal_uuid → scale disabled");
-    return;
-  }
-
-  // 🔴 ADMIN TERMINALS MUST NOT RECEIVE SCALE
-  if (terminalUuid.startsWith("admin-")) {
-    console.log("Admin terminal — scale disabled");
-    return;
-  }
-
-  // 🔒 Electron owns scale on desktop
-  if (window.electron) {
-    console.log("Electron detected → backend scale WS disabled");
-    return;
-  }
-
-  const origin = window.location.origin;
-  const WS_URL = origin.startsWith("https")
-    ? origin.replace(/^https/, "wss")
-    : origin.replace(/^http/, "ws");
-
-  const ws = new WebSocket(
-    `${WS_URL}/ws?terminal_uuid=${encodeURIComponent(terminalUuid)}`
-  );
-
-  wsRef.current = ws;
-
-  ws.onopen = () => {
-    console.log("🟢 Scale WS connected:", terminalUuid);
-    setScaleStatus("connected");
-  };
-
-  ws.onmessage = (event) => {
-    try {
-      const data = JSON.parse(event.data);
-      if (data.type !== "scale") return;
-
-      // 🔒 HARD TERMINAL FILTER
-      if (
-        data.terminal_uuid &&
-        data.terminal_uuid !== terminalUuid
-      ) {
-        return;
-      }
-
-      setLiveWeightKg(Number(data.weight_kg).toFixed(3));
-      lastWeightTsRef.current = Date.now();
-      setScaleStatus("connected");
-    } catch (e) {
-      console.error("Scale WS parse error", e);
-    }
-  };
-
-  ws.onerror = () => {
-    setScaleStatus("error");
-  };
-
-  ws.onclose = () => {
-    console.log("🔴 Scale WS closed");
-    setScaleStatus("disconnected");
-  };
-
-  return () => {
-    ws.close();
-  };
-}, []);
 
 
     // ---------- Cart helpers ----------
