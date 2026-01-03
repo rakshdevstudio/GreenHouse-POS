@@ -295,37 +295,41 @@ app.get('/admin/stores', requireAdmin, async (req, res) => {
 // It receives weight from the physical weighing scale and emits it
 // to WebSocket listeners for the correct terminal.
 app.post('/scale/weight', (req, res) => {
-  const wRaw = req.body?.weight_kg;
-  const w =
-    typeof wRaw === 'number' || typeof wRaw === 'string'
-      ? Number(wRaw)
-      : NaN;
-
   const terminalUuid =
     typeof req.body?.terminal_uuid === 'string'
       ? req.body.terminal_uuid.trim()
       : null;
 
-  if (!Number.isFinite(w)) {
-    return res.status(400).json({ error: 'weight_kg must be a number' });
-  }
+  const raw = req.body?.weight_kg;
+  const weight = Number(raw);
+
+  // terminal_uuid is mandatory
   if (!terminalUuid) {
+    console.warn('❌ scale/weight rejected: missing terminal_uuid', req.body);
     return res.status(400).json({ error: 'terminal_uuid required' });
   }
 
-  // 🔴 BLOCK ADMIN TERMINALS AT BACKEND LEVEL
+  // block admin / virtual terminals
   if (terminalUuid.startsWith('admin-')) {
     return res.json({ ok: true, ignored: 'admin terminal' });
   }
 
-  const latestWeight = Number(w.toFixed(4));
+  // weight must be numeric (allow negative / zero)
+  if (!Number.isFinite(weight)) {
+    console.warn('❌ scale/weight rejected: invalid weight', raw);
+    return res.status(400).json({ error: 'weight_kg must be a number' });
+  }
+
+  const latestWeight = Number(weight.toFixed(3));
 
   const payload = JSON.stringify({
     type: 'scale',
-    weight_kg: latestWeight,
     terminal_uuid: terminalUuid,
+    weight_kg: latestWeight,
     ts: Date.now(),
   });
+
+  let delivered = 0;
 
   wss.clients.forEach((client) => {
     if (
@@ -334,11 +338,17 @@ app.post('/scale/weight', (req, res) => {
     ) {
       try {
         client.send(payload);
-      } catch (e) {}
+        delivered++;
+      } catch (e) {
+        console.warn('WS send failed', e.message);
+      }
     }
   });
 
-  console.log(`⚖️ Scale ${terminalUuid}:`, latestWeight);
+  console.log(
+    `⚖️ scale ${terminalUuid}: ${latestWeight} kg → ${delivered} client(s)`
+  );
+
   return res.json({ ok: true });
 });
 
