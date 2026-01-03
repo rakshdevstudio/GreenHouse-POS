@@ -301,6 +301,11 @@ app.post('/scale/weight', (req, res) => {
     return res.status(400).json({ error: 'terminal_uuid required' });
   }
 
+  // 🔴 BLOCK ADMIN TERMINALS AT BACKEND LEVEL
+  if (terminalUuid.startsWith('admin-')) {
+    return res.json({ ok: true, ignored: 'admin terminal' });
+  }
+
   const latestWeight = Number(w.toFixed(4));
 
   const payload = JSON.stringify({
