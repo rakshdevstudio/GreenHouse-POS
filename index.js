@@ -197,12 +197,16 @@ app.get('/auth/terminals', async (req, res) => {
 
     const storeId = storeRes.rows[0].store_id;
 
-    // 2. Fetch terminals for store
+    // 2. Fetch ONLY valid counter/admin terminals for store
     let termRes = await client.query(
       `SELECT id AS terminal_id, terminal_uuid, label
          FROM terminals
         WHERE store_id = $1
-        ORDER BY id ASC`,
+          AND (
+            terminal_uuid LIKE 's%-c%' OR
+            terminal_uuid LIKE 'admin-%'
+          )
+        ORDER BY terminal_uuid ASC`,
       [storeId]
     );
 
@@ -1154,12 +1158,16 @@ app.post('/auth/store-login', async (req, res) => {
       [store_id, token, terminal_uuid || null, expiresAt]
     );
 
-    // Optionally auto-register terminal if not present
-    if (terminal_uuid) {
+    // Register terminal ONLY if it matches the new counter scheme or admin impersonation
+    if (
+      terminal_uuid &&
+      ((terminal_uuid.startsWith('s') && terminal_uuid.includes('-c')) ||
+        terminal_uuid.startsWith('admin-'))
+    ) {
       await client.query(
         `INSERT INTO terminals (store_id, terminal_uuid, label)
          VALUES ($1,$2,$3)
-         ON CONFLICT (terminal_uuid) DO UPDATE SET label = EXCLUDED.label`,
+         ON CONFLICT (terminal_uuid) DO NOTHING`,
         [store_id, terminal_uuid, 'Terminal']
       );
     }
