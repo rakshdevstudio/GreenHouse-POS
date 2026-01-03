@@ -293,6 +293,7 @@
             (token ? `&token=${encodeURIComponent(token)}` : "");
 
           setScaleStatus("connecting");
+          lastWeightTsRef.current = 0;
           const ws = new WebSocket(url);
           wsRef.current = ws;
           // allow reconnects by default; will be reset on unmount
@@ -303,6 +304,7 @@
             clearReconnect();
             // reset attempt counter
             wsReconnectRef.current.attempt = 0;
+            lastWeightTsRef.current = 0;
             setScaleStatus("connecting");
           };
 
@@ -311,9 +313,6 @@
             try {
               const msg = JSON.parse(evt.data);
               if (!msg) return;
-
-              // Enforce terminal_uuid match for scale messages
-              if (msg.terminal_uuid && msg.terminal_uuid !== terminalUuid) return;
 
               if (msg.type === "scale") {
                 if (!msg.terminal_uuid || msg.terminal_uuid !== terminalUuid) return;

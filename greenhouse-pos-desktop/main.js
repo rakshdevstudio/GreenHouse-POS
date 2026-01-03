@@ -8,7 +8,8 @@ const { ReadlineParser } = require("@serialport/parser-readline");
 const WebSocket = require("ws");
 
 const BACKEND_WS_URL = "wss://greenhouse-pos-production.up.railway.app/ws";
-console.log("🏷 POS TERMINAL ID:", process.env.TERMINAL_ID || "STORE1-T1");
+const TERMINAL_UUID = process.env.TERMINAL_UUID || process.env.TERMINAL_ID || "store1-t1";
+console.log("🏷 POS TERMINAL UUID:", TERMINAL_UUID);
 let backendWs = null;
 
 const { autoUpdater } = require("electron-updater");
@@ -37,6 +38,7 @@ function notifyScaleStatus(status, info) {
 }
 
 function connectBackendWS() {
+  if (backendWs && backendWs.readyState === WebSocket.OPEN) return;
   if (backendWs) {
     try { backendWs.close(); } catch (e) {}
     backendWs = null;
@@ -44,23 +46,25 @@ function connectBackendWS() {
 
   console.log("🌐 Connecting to backend WS:", BACKEND_WS_URL);
 
-  const TERMINAL_ID = process.env.TERMINAL_ID || "STORE1-T1";
-
   backendWs = new WebSocket(
-    `${BACKEND_WS_URL}?terminal_id=${encodeURIComponent(TERMINAL_ID)}`
+    `${BACKEND_WS_URL}?terminal_uuid=${encodeURIComponent(TERMINAL_UUID)}`
   );
 
   backendWs.on("open", () => {
     console.log("🟢 Backend WS connected");
+    notifyScaleStatus("connecting");
   });
 
   backendWs.on("message", (data) => {
     try {
       const msg = JSON.parse(data.toString());
-
-      if (msg.type === "scale" && typeof msg.weight_kg === "number") {
+      if (
+        msg.type === "scale" &&
+        typeof msg.weight_kg === "number" &&
+        msg.terminal_uuid === TERMINAL_UUID
+      ) {
         console.log("⚖️ Backend scale weight:", msg.weight_kg);
-
+        notifyScaleStatus("connected");
         // Forward to renderer (POS UI)
         if (mainWindow && mainWindow.webContents && !mainWindow.isDestroyed()) {
           mainWindow.webContents.send("scale-data", {
@@ -76,11 +80,13 @@ function connectBackendWS() {
   });
 
   backendWs.on("close", () => {
+    notifyScaleStatus("disconnected");
     console.warn("⚠️ Backend WS disconnected, retrying in 3s");
     setTimeout(connectBackendWS, 3000);
   });
 
   backendWs.on("error", (err) => {
+    notifyScaleStatus("disconnected", { error: err.message });
     console.error("❌ Backend WS error:", err.message);
     try { backendWs.close(); } catch (e) {}
   });
@@ -102,6 +108,9 @@ function createWindow() {
 
   // After the window loads, immediately send the current scale status to the renderer
   mainWindow.webContents.once("did-finish-load", () => {
+    mainWindow.webContents.send("terminal-info", {
+      terminal_uuid: TERMINAL_UUID,
+    });
     notifyScaleStatus(scaleStatus);
   });
 

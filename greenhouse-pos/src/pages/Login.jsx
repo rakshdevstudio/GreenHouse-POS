@@ -25,6 +25,7 @@ export default function Login() {
   useEffect(() => {
     if (!username) return;
 
+    setError(null);
     let cancelled = false;
     setTerminals([]);
     setTerminalUuid("");
@@ -34,7 +35,11 @@ export default function Login() {
       .listTerminals({ username })
       .then((res) => {
         if (cancelled) return;
-        const list = Array.isArray(res?.terminals) ? res.terminals : [];
+        const list = Array.isArray(res?.terminals)
+          ? res.terminals.filter(
+              (t) => !t.terminal_uuid?.startsWith("admin-")
+            )
+          : [];
         setTerminals(list);
         if (list.length > 0) {
           setTerminalUuid(list[0].terminal_uuid);
