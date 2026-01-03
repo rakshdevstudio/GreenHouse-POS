@@ -342,19 +342,6 @@
               console.warn('ws message parse error', err);
             }
           };
-    // Detect scale disconnects based on heartbeat
-    useEffect(() => {
-      const timer = setInterval(() => {
-        if (
-          scaleStatus === "connected" &&
-          Date.now() - lastWeightTsRef.current > 3000
-        ) {
-          setScaleStatus("disconnected");
-        }
-      }, 1000);
-
-      return () => clearInterval(timer);
-    }, [scaleStatus]);
 
           ws.onclose = (ev) => {
             console.warn('POS: ws closed', ev && ev.code, ev && ev.reason);
@@ -393,6 +380,20 @@
       };
       // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [terminalUuid]);
+
+    // Heartbeat: mark scale disconnected if no data for 3s
+    useEffect(() => {
+      const timer = setInterval(() => {
+        if (
+          scaleStatus === "connected" &&
+          Date.now() - lastWeightTsRef.current > 3000
+        ) {
+          setScaleStatus("disconnected");
+        }
+      }, 1000);
+
+      return () => clearInterval(timer);
+    }, [scaleStatus]);
 
     // Focus search on first load for quick keyboard billing
   useEffect(() => {
