@@ -40,7 +40,7 @@ function notifyScaleStatus(status, info) {
 function connectBackendWS() {
   if (backendWs && backendWs.readyState === WebSocket.OPEN) return;
   if (backendWs) {
-    try { backendWs.close(); } catch (e) {}
+    try { backendWs.close(); } catch (e) { }
     backendWs = null;
   }
 
@@ -58,21 +58,28 @@ function connectBackendWS() {
   backendWs.on("message", (data) => {
     try {
       const msg = JSON.parse(data.toString());
-      if (
-        msg.type === "scale" &&
-        typeof msg.weight_kg === "number" &&
-        msg.terminal_uuid === TERMINAL_UUID
-      ) {
-        console.log("⚖️ Backend scale weight:", msg.weight_kg);
-        notifyScaleStatus("connected");
-        // Forward to renderer (POS UI)
-        if (mainWindow && mainWindow.webContents && !mainWindow.isDestroyed()) {
-          mainWindow.webContents.send("scale-data", {
-            source: "backend",
-            weightKg: msg.weight_kg,
-            ts: Date.now(),
-          });
-        }
+      if (!msg || msg.type !== "scale") return;
+
+      // normalize terminal UUID
+      const myId = String(TERMINAL_UUID || "").trim().toLowerCase();
+      const msgId = String(msg.terminal_uuid || "").trim().toLowerCase();
+      if (!msgId || msgId !== myId) return;
+
+      // normalize weight (string OR number)
+      const raw = Number(msg.weight_kg);
+      if (!Number.isFinite(raw)) return;
+
+      const weightKg = Number(raw.toFixed(3));
+      console.log("⚖️ Backend scale weight:", weightKg);
+
+      notifyScaleStatus("connected");
+
+      if (mainWindow && mainWindow.webContents && !mainWindow.isDestroyed()) {
+        mainWindow.webContents.send("scale-data", {
+          source: "backend",
+          weightKg,
+          ts: Date.now(),
+        });
       }
     } catch (err) {
       console.warn("⚠️ Invalid WS message:", err.message);
@@ -88,7 +95,7 @@ function connectBackendWS() {
   backendWs.on("error", (err) => {
     notifyScaleStatus("disconnected", { error: err.message });
     console.error("❌ Backend WS error:", err.message);
-    try { backendWs.close(); } catch (e) {}
+    try { backendWs.close(); } catch (e) { }
   });
 }
 
@@ -238,7 +245,7 @@ ipcMain.handle('print-receipt-html', async (event, html) => {
       });
     });
 
-    try { printWin.close(); } catch (e) {}
+    try { printWin.close(); } catch (e) { }
 
     if (!printed.success) {
       console.error('❌ print-receipt-html failed:', printed.failureReason);
@@ -406,7 +413,7 @@ async function initScale() {
 
         const onError = (err) => {
           if (sp.isOpen === true) {
-            try { sp.close(); } catch (e) {}
+            try { sp.close(); } catch (e) { }
           }
           reject(err);
         };
@@ -508,7 +515,7 @@ async function initScale() {
 
       // Parse the weight
       const weight = parseEssaeWeight(clean);
-      
+
       if (weight !== null) {
         const weightKg = Number(weight.toFixed(3));
         console.log("⚖️ PARSED WEIGHT:", weightKg, "kg");
@@ -529,7 +536,7 @@ async function initScale() {
       notifyScaleStatus("disconnected", { error: err.message });
       console.error("❌ Scale error:", err.message);
       if (scalePort && scalePort.isOpen === true) {
-        try { scalePort.close(); } catch (e) {}
+        try { scalePort.close(); } catch (e) { }
       }
     });
 
@@ -605,7 +612,7 @@ app.on("before-quit", () => {
   if (backendWs) {
     try {
       backendWs.close();
-    } catch (e) {}
+    } catch (e) { }
     backendWs = null;
   }
 });
