@@ -315,9 +315,17 @@
               if (!msg) return;
 
               if (msg.type === "scale") {
-                if (!msg.terminal_uuid || msg.terminal_uuid !== terminalUuid) return;
-                if (typeof msg.weight_kg === "number") {
-                  const w = Number(msg.weight_kg).toFixed(3);
+                // Robust UUID Check: Normalize case and trim whitespace
+                const myIds = String(terminalUuid || "").trim().toLowerCase();
+                const msgIds = String(msg.terminal_uuid || "").trim().toLowerCase();
+
+                if (!msgIds || msgIds !== myIds) return;
+
+                // Robust Weight Check: Cast to number and validate
+                const rawWeight = Number(msg.weight_kg);
+
+                if (Number.isFinite(rawWeight)) {
+                  const w = rawWeight.toFixed(3);
                   setLiveWeightKg(w);
                   lastWeightTsRef.current = Date.now();
                   setScaleStatus("connected");
