@@ -1,19 +1,36 @@
-const { app, BrowserWindow, ipcMain } = require("electron");
+const { app, BrowserWindow } = require("electron");
 const path = require("path");
+const fs = require("fs");
 const { SerialPort } = require("serialport");
 const axios = require("axios");
 
-// ================= CONFIG =================
-const SCALE_PORT = "COM1";
-const BAUD_RATE = 9600;
+// ================= LOAD CONFIG =================
+let config = {};
+try {
+  config = JSON.parse(
+    fs.readFileSync(path.join(__dirname, "scale-config.json"), "utf8")
+  );
+} catch (err) {
+  console.error("❌ scale-config.json missing or invalid");
+  app.quit();
+  return;
+}
+
+const TERMINAL_UUID = config.terminal_uuid?.trim().toLowerCase();
+const SCALE_PORT = config.scale_port || "COM1";
+const BAUD_RATE = config.baud_rate || 9600;
+
+if (!TERMINAL_UUID) {
+  console.error("❌ terminal_uuid missing in scale-config.json");
+  app.quit();
+  return;
+}
 
 const SERVER_URL = "https://greenhouse-pos-production.up.railway.app";
-const TERMINAL_UUID =
-  (process.env.TERMINAL_UUID || "s1-c4").trim().toLowerCase();
 
-// =========================================
-let mainWindow;
-let scalePort;
+// ==============================================
+let mainWindow = null;
+let scalePort = null;
 let buffer = "";
 let lastSent = 0;
 const SEND_INTERVAL = 200;
@@ -35,7 +52,7 @@ function createWindow() {
 
 // ================= SCALE =================
 function openScale() {
-  console.log("🔌 OPENING SCALE:", SCALE_PORT, BAUD_RATE);
+  console.log(`🔌 OPENING SCALE: ${SCALE_PORT} @ ${BAUD_RATE}`);
 
   scalePort = new SerialPort({
     path: `\\\\.\\${SCALE_PORT}`,
@@ -49,13 +66,12 @@ function openScale() {
   scalePort.open(err => {
     if (err) {
       console.error("❌ SCALE OPEN FAILED:", err.message);
-      setTimeout(openScale, 3000);
-      return;
+      return setTimeout(openScale, 3000);
     }
 
     console.log("✅ SCALE CONNECTED");
 
-    // CRITICAL — exactly like .NET
+    // EXACT .NET BEHAVIOR
     scalePort.set({ dtr: true, rts: true });
   });
 
@@ -74,8 +90,9 @@ function openScale() {
 
 function restartScale() {
   try {
-    scalePort && scalePort.close();
+    if (scalePort && scalePort.isOpen) scalePort.close();
   } catch { }
+  scalePort = null;
   setTimeout(openScale, 3000);
 }
 
@@ -96,14 +113,14 @@ function handleRawData(chunk) {
     const weight = parseFloat(match[0]);
     if (Number.isNaN(weight)) continue;
 
-    // 🔴 THIS IS AUTO-FILL SOURCE
+    const weightKg = Number(weight.toFixed(3));
+
+    // 🔴 AUTO-FILL SOURCE (UI)
     if (mainWindow) {
-      mainWindow.webContents.send("scale-data", {
-        weightKg: Number(weight.toFixed(3)),
-      });
+      mainWindow.webContents.send("scale-data", { weightKg });
     }
 
-    sendToBackend(weight);
+    sendToBackend(weightKg);
   }
 }
 
@@ -120,20 +137,20 @@ async function sendToBackend(weight) {
       weight_kg: weight,
     });
   } catch {
-    // Silent fail — scale must NEVER stop
+    // silent fail — NEVER block scale
   }
 }
 
 // ================= APP =================
 app.whenReady().then(() => {
-  console.log("🏷 TERMINAL:", TERMINAL_UUID);
+  console.log("🏷 TERMINAL UUID:", TERMINAL_UUID);
   createWindow();
   openScale();
 });
 
 app.on("window-all-closed", () => {
   try {
-    scalePort && scalePort.close();
+    if (scalePort && scalePort.isOpen) scalePort.close();
   } catch { }
   app.quit();
 });
