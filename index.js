@@ -300,8 +300,8 @@ app.post('/scale/weight', (req, res) => {
     typeof req.body?.terminal_uuid === 'string'
       ? req.body.terminal_uuid.trim()
       : typeof req.body?.terminal_id === 'string'
-      ? req.body.terminal_id.trim()
-      : null;
+        ? req.body.terminal_id.trim()
+        : null;
 
   const rawWeight = req.body?.weight_kg;
   const weight = Number(rawWeight);
@@ -356,19 +356,10 @@ app.post('/scale/weight', (req, res) => {
   });
 
   // Safety fallback: do NOT silently drop data
-  if (delivered === 0 && openClients > 0) {
+  if (delivered === 0) {
     console.warn(
-      `⚠️ scale ${terminalUuid}: no exact WS match, fallback broadcast`
+      `❌ scale ${terminalUuid}: no WS client connected for this terminal`
     );
-
-    wss.clients.forEach((client) => {
-      if (client.readyState === WebSocket.OPEN) {
-        try {
-          client.send(payload);
-          delivered++;
-        } catch (e) {}
-      }
-    });
   }
 
   console.log(
@@ -471,17 +462,17 @@ app.post('/store/products', requireStoreOrAdmin, async (req, res) => {
       price !== undefined && price !== null && price !== ''
         ? price
         : price_per_kg !== undefined && price_per_kg !== null && price_per_kg !== ''
-        ? price_per_kg
-        : price_per_qty !== undefined && price_per_qty !== null && price_per_qty !== ''
-        ? price_per_qty
-        : 0;
+          ? price_per_kg
+          : price_per_qty !== undefined && price_per_qty !== null && price_per_qty !== ''
+            ? price_per_qty
+            : 0;
 
     const rawStock =
       stock !== undefined && stock !== null && stock !== ''
         ? stock
         : stock_qty !== undefined && stock_qty !== null && stock_qty !== ''
-        ? stock_qty
-        : 0;
+          ? stock_qty
+          : 0;
 
     const parsedPrice = parseFloat(rawPrice);
     const parsedStock = parseFloat(rawStock);
@@ -756,8 +747,8 @@ app.delete('/store/products/:id', requireStoreOrAdmin, async (req, res) => {
 //   "stock": 100,
 //   "store_id": 1
 // }
-app.post('/products/create', requireAdmin, async (req, res) => {  
-    const client = await pool.connect();
+app.post('/products/create', requireAdmin, async (req, res) => {
+  const client = await pool.connect();
   try {
     const {
       sku,
@@ -779,17 +770,17 @@ app.post('/products/create', requireAdmin, async (req, res) => {
       price !== undefined && price !== null && price !== ''
         ? price
         : price_per_kg !== undefined && price_per_kg !== null && price_per_kg !== ''
-        ? price_per_kg
-        : price_per_qty !== undefined && price_per_qty !== null && price_per_qty !== ''
-        ? price_per_qty
-        : 0;
+          ? price_per_kg
+          : price_per_qty !== undefined && price_per_qty !== null && price_per_qty !== ''
+            ? price_per_qty
+            : 0;
 
     const rawStock =
       stock !== undefined && stock !== null && stock !== ''
         ? stock
         : stock_qty !== undefined && stock_qty !== null && stock_qty !== ''
-        ? stock_qty
-        : 0;
+          ? stock_qty
+          : 0;
 
     const parsedPrice = parseFloat(rawPrice);
     const parsedStock = parseFloat(rawStock);
@@ -840,7 +831,7 @@ app.post('/products/create', requireAdmin, async (req, res) => {
     client.release();
     return res.status(201).json({ product: ins.rows[0] });
   } catch (err) {
-    try { await client.query('ROLLBACK'); } catch(e){/*ignore*/}
+    try { await client.query('ROLLBACK'); } catch (e) {/*ignore*/ }
     client.release();
     console.error('create product error', err);
     return res.status(500).json({ error: 'server error' });
@@ -878,14 +869,14 @@ app.patch('/products/:id', requireAdmin, async (req, res) => {
     // Optional: if sku provided, ensure uniqueness per store
     if (sku !== undefined && (store_id !== undefined || true)) {
       // If store_id specified use that, else fetch current store_id
-      const sId = store_id !== undefined ? parseInt(store_id,10) : null;
+      const sId = store_id !== undefined ? parseInt(store_id, 10) : null;
       if (sId === null) {
         // fetch product's current store_id
         const cur = await client.query('SELECT store_id FROM products WHERE id = $1 LIMIT 1', [productId]);
         if (!cur.rows.length) { client.release(); return res.status(404).json({ error: 'product not found' }); }
       }
       // Check SKU conflict (use provided or existing store_id)
-      const checkStoreId = sId !== null ? sId : (await client.query('SELECT store_id FROM products WHERE id = $1',[productId])).rows[0].store_id;
+      const checkStoreId = sId !== null ? sId : (await client.query('SELECT store_id FROM products WHERE id = $1', [productId])).rows[0].store_id;
       const conflict = await client.query('SELECT id FROM products WHERE sku = $1 AND store_id = $2 AND id <> $3 LIMIT 1', [sku, checkStoreId, productId]);
       if (conflict.rows.length) { client.release(); return res.status(409).json({ error: 'another product with this sku exists for the store' }); }
     }
@@ -899,7 +890,7 @@ app.patch('/products/:id', requireAdmin, async (req, res) => {
     client.release();
     return res.json({ product: r.rows[0] });
   } catch (err) {
-    try { await client.query('ROLLBACK'); } catch(e){/*ignore*/ }
+    try { await client.query('ROLLBACK'); } catch (e) {/*ignore*/ }
     client.release();
     console.error('update product error', err);
     return res.status(500).json({ error: 'server error' });
@@ -908,7 +899,7 @@ app.patch('/products/:id', requireAdmin, async (req, res) => {
 
 // DELETE /products/:id  (soft delete — sets deleted_at)
 app.delete('/products/:id', requireAdmin, async (req, res) => {
-      const client = await pool.connect();
+  const client = await pool.connect();
   try {
     const productId = parseInt(req.params.id, 10);
     if (!productId) { client.release(); return res.status(400).json({ error: 'invalid product id' }); }
@@ -923,7 +914,7 @@ app.delete('/products/:id', requireAdmin, async (req, res) => {
     if (!r.rows.length) return res.status(404).json({ error: 'product not found or already deleted' });
     return res.json({ deleted: true, product: r.rows[0] });
   } catch (err) {
-    try { await client.query('ROLLBACK'); } catch(e){}
+    try { await client.query('ROLLBACK'); } catch (e) { }
     client.release();
     console.error('delete product error', err);
     return res.status(500).json({ error: 'server error' });
@@ -1141,8 +1132,8 @@ async function requireStoreOrAdmin(req, res, next) {
     return res.status(500).json({ error: 'server error' });
   }
 }
-  // POST /auth/store-login (store credentials -> returns session token)
-  // Body: { "username":"store1", "password":"store1pass", "terminal_uuid":"term-web-01" }
+// POST /auth/store-login (store credentials -> returns session token)
+// Body: { "username":"store1", "password":"store1pass", "terminal_uuid":"term-web-01" }
 app.post('/auth/store-login', async (req, res) => {
   const { username, password, terminal_uuid } = req.body || {};
   if (!username || !password) {
@@ -1511,7 +1502,7 @@ app.post('/invoices', requireStoreOrAdmin, async (req, res) => {
     return res.status(201).json({ invoice: payload });
 
   } catch (err) {
-    try { await client.query('ROLLBACK'); } catch(e){ }
+    try { await client.query('ROLLBACK'); } catch (e) { }
     client.release();
     console.error('Invoice error', err.message || err);
     return res.status(500).json({ error: err.message || 'server error' });
@@ -1835,7 +1826,7 @@ app.post('/products/update-prices', requireAdmin, async (req, res) => {
     client.release();
     return res.json({ updated: results.length, results });
   } catch (err) {
-    try { await client.query('ROLLBACK'); } catch(e) {}
+    try { await client.query('ROLLBACK'); } catch (e) { }
     client.release();
     console.error('bulk update error', err);
     return res.status(500).json({ error: 'server error' });
@@ -2390,12 +2381,12 @@ server.on('upgrade', (req, socket, head) => {
       wss.emit('connection', ws, req);
     });
   } catch (err) {
-    try { socket.destroy(); } catch (e) {}
+    try { socket.destroy(); } catch (e) { }
   }
 });
 
 // Heartbeat/ping-pong
-function noop() {}
+function noop() { }
 function heartbeat() { this.isAlive = true; }
 
 wss.on('connection', (ws, req) => {
@@ -2439,7 +2430,7 @@ wss.on('connection', (ws, req) => {
 
   ws.on('error', (err) => {
     console.warn('WS client error', err && err.message);
-    try { ws.terminate(); } catch (e) {}
+    try { ws.terminate(); } catch (e) { }
   });
 });
 
@@ -2448,7 +2439,7 @@ const wsInterval = setInterval(() => {
   wss.clients.forEach((ws) => {
     if (ws.isAlive === false) return ws.terminate();
     ws.isAlive = false;
-    try { ws.ping(noop); } catch (e) { try { ws.terminate(); } catch (e2) {} }
+    try { ws.ping(noop); } catch (e) { try { ws.terminate(); } catch (e2) { } }
   });
 }, 30 * 1000);
 // Helper: broadcast new invoice event to all connected WS clients (safe JSON)
@@ -2468,8 +2459,8 @@ function broadcastNewInvoice(invoice) {
 
 // Graceful cleanup if process exits
 process.on('SIGTERM', () => {
-  try { clearInterval(wsInterval); } catch (e) {}
-  try { wss.close(); } catch (e) {}
+  try { clearInterval(wsInterval); } catch (e) { }
+  try { wss.close(); } catch (e) { }
 });
 
 server.listen(PORT, () => {
