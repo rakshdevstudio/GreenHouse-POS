@@ -4,40 +4,53 @@ const fs = require("fs");
 const { SerialPort } = require("serialport");
 const axios = require("axios");
 
-// ================= LOAD CONFIG =================
-// ================= LOAD CONFIG =================
+// ==================================================
+// CONFIG FILE (AUTO-CREATED ON FIRST RUN)
+// ==================================================
 const configPath = path.join(app.getPath("userData"), "scale-config.json");
 
-let config = {};
+const DEFAULT_CONFIG = {
+  terminal_uuid: "s1-c1",
+  scale_port: "COM1",
+  baud_rate: 9600
+};
+
+let config = DEFAULT_CONFIG;
+
 try {
+  if (!fs.existsSync(configPath)) {
+    fs.writeFileSync(
+      configPath,
+      JSON.stringify(DEFAULT_CONFIG, null, 2),
+      "utf8"
+    );
+    console.log("🆕 Created default scale-config.json at:", configPath);
+  }
+
   config = JSON.parse(fs.readFileSync(configPath, "utf8"));
   console.log("📄 Loaded scale config from:", configPath);
+
 } catch (err) {
-  console.error("❌ scale-config.json missing at", configPath);
-  app.quit();
-  return;
+  console.error("❌ Config load failed, using defaults:", err.message);
 }
 
+// ==================================================
 const TERMINAL_UUID = config.terminal_uuid?.trim().toLowerCase();
 const SCALE_PORT = config.scale_port || "COM1";
 const BAUD_RATE = config.baud_rate || 9600;
 
-if (!TERMINAL_UUID) {
-  console.error("❌ terminal_uuid missing in scale-config.json");
-  app.quit();
-  return;
-}
-
 const SERVER_URL = "https://greenhouse-pos-production.up.railway.app";
 
-// ==============================================
+// ==================================================
 let mainWindow = null;
 let scalePort = null;
 let buffer = "";
 let lastSent = 0;
 const SEND_INTERVAL = 200;
 
-// ================= WINDOW =================
+// ==================================================
+// WINDOW
+// ==================================================
 function createWindow() {
   mainWindow = new BrowserWindow({
     width: 1200,
@@ -52,7 +65,9 @@ function createWindow() {
   mainWindow.on("closed", () => (mainWindow = null));
 }
 
-// ================= SCALE =================
+// ==================================================
+// SCALE
+// ==================================================
 function openScale() {
   console.log(`🔌 OPENING SCALE: ${SCALE_PORT} @ ${BAUD_RATE}`);
 
@@ -72,22 +87,12 @@ function openScale() {
     }
 
     console.log("✅ SCALE CONNECTED");
-
-    // EXACT .NET BEHAVIOR
-    scalePort.set({ dtr: true, rts: true });
+    scalePort.set({ dtr: true, rts: true }); // .NET compatible
   });
 
   scalePort.on("data", handleRawData);
-
-  scalePort.on("error", err => {
-    console.error("❌ SCALE ERROR:", err.message);
-    restartScale();
-  });
-
-  scalePort.on("close", () => {
-    console.warn("⚠️ SCALE CLOSED");
-    restartScale();
-  });
+  scalePort.on("error", restartScale);
+  scalePort.on("close", restartScale);
 }
 
 function restartScale() {
@@ -98,7 +103,9 @@ function restartScale() {
   setTimeout(openScale, 3000);
 }
 
-// ================= PARSER =================
+// ==================================================
+// PARSER
+// ==================================================
 function handleRawData(chunk) {
   buffer += chunk.toString("utf8");
 
@@ -117,7 +124,6 @@ function handleRawData(chunk) {
 
     const weightKg = Number(weight.toFixed(3));
 
-    // 🔴 AUTO-FILL SOURCE (UI)
     if (mainWindow) {
       mainWindow.webContents.send("scale-data", { weightKg });
     }
@@ -126,7 +132,9 @@ function handleRawData(chunk) {
   }
 }
 
-// ================= BACKEND =================
+// ==================================================
+// BACKEND
+// ==================================================
 async function sendToBackend(weight) {
   const now = Date.now();
   if (now - lastSent < SEND_INTERVAL) return;
@@ -139,11 +147,13 @@ async function sendToBackend(weight) {
       weight_kg: weight,
     });
   } catch {
-    // silent fail — NEVER block scale
+    // silent fail — scale must never stop
   }
 }
 
-// ================= APP =================
+// ==================================================
+// APP LIFECYCLE
+// ==================================================
 app.whenReady().then(() => {
   console.log("🏷 TERMINAL UUID:", TERMINAL_UUID);
   createWindow();
