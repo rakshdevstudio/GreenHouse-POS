@@ -5,13 +5,15 @@ const { SerialPort } = require("serialport");
 const axios = require("axios");
 
 // ================= LOAD CONFIG =================
+// ================= LOAD CONFIG =================
+const configPath = path.join(app.getPath("userData"), "scale-config.json");
+
 let config = {};
 try {
-  config = JSON.parse(
-    fs.readFileSync(path.join(__dirname, "scale-config.json"), "utf8")
-  );
+  config = JSON.parse(fs.readFileSync(configPath, "utf8"));
+  console.log("📄 Loaded scale config from:", configPath);
 } catch (err) {
-  console.error("❌ scale-config.json missing or invalid");
+  console.error("❌ scale-config.json missing at", configPath);
   app.quit();
   return;
 }
