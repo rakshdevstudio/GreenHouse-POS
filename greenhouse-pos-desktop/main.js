@@ -29,41 +29,42 @@ function createWindow() {
 }
 
 // ==================================================
-// CONFIG + SCALE INIT (AFTER APP READY)
+// INIT APP (CONFIGS + SCALE)
 // ==================================================
 function initApp() {
-  // 🔒 SAFE to call now
   const exeDir = path.dirname(app.getPath("exe"));
-  const configPath = path.join(exeDir, "scale-config.json");
 
-  const DEFAULT_CONFIG = {
+  // ================= SCALE CONFIG =================
+  const scaleConfigPath = path.join(exeDir, "scale-config.json");
+
+  const DEFAULT_SCALE_CONFIG = {
     terminal_uuid: "s1-c1",
     scale_port: "COM1",
     baud_rate: 9600
   };
 
-  let config = DEFAULT_CONFIG;
+  let scaleConfig = DEFAULT_SCALE_CONFIG;
 
   try {
-    if (!fs.existsSync(configPath)) {
+    if (!fs.existsSync(scaleConfigPath)) {
       fs.writeFileSync(
-        configPath,
-        JSON.stringify(DEFAULT_CONFIG, null, 2),
+        scaleConfigPath,
+        JSON.stringify(DEFAULT_SCALE_CONFIG, null, 2),
         "utf8"
       );
-      console.log("🆕 Created scale-config.json at:", configPath);
+      console.log("🆕 Created scale-config.json:", scaleConfigPath);
     }
 
-    config = JSON.parse(fs.readFileSync(configPath, "utf8"));
-    console.log("📄 Loaded scale config:", configPath);
+    scaleConfig = JSON.parse(fs.readFileSync(scaleConfigPath, "utf8"));
+    console.log("📄 Loaded scale-config.json");
 
   } catch (err) {
-    console.error("❌ Config error:", err.message);
+    console.error("❌ Scale config error:", err.message);
   }
 
-  const TERMINAL_UUID = config.terminal_uuid?.trim().toLowerCase();
-  const SCALE_PORT = config.scale_port || "COM1";
-  const BAUD_RATE = config.baud_rate || 9600;
+  const TERMINAL_UUID = scaleConfig.terminal_uuid?.trim().toLowerCase();
+  const SCALE_PORT = scaleConfig.scale_port || "COM1";
+  const BAUD_RATE = scaleConfig.baud_rate || 9600;
 
   if (!TERMINAL_UUID) {
     console.error("❌ terminal_uuid missing in scale-config.json");
@@ -71,13 +72,48 @@ function initApp() {
     return;
   }
 
+  // ================= PRINTER CONFIG =================
+  const printerConfigPath = path.join(exeDir, "printer-config.json");
+
+  const DEFAULT_PRINTER_CONFIG = {
+    printer_name: "EPSON TM-T82",
+    paper_width: 80,
+    cut: true,
+    store: {
+      name: "Greenhouse Supermarket",
+      address_lines: []
+    }
+  };
+
+  let printerConfig = DEFAULT_PRINTER_CONFIG;
+
+  try {
+    if (!fs.existsSync(printerConfigPath)) {
+      fs.writeFileSync(
+        printerConfigPath,
+        JSON.stringify(DEFAULT_PRINTER_CONFIG, null, 2),
+        "utf8"
+      );
+      console.log("🆕 Created printer-config.json:", printerConfigPath);
+    }
+
+    printerConfig = JSON.parse(fs.readFileSync(printerConfigPath, "utf8"));
+    console.log("🖨 Loaded printer-config.json");
+
+  } catch (err) {
+    console.error("❌ Printer config error:", err.message);
+  }
+
+  // 🔎 Logs for sanity check
   console.log("🏷 TERMINAL:", TERMINAL_UUID);
+  console.log("🖨 PRINTER:", printerConfig.printer_name);
+
   createWindow();
   openScale(SCALE_PORT, BAUD_RATE, TERMINAL_UUID);
 }
 
 // ==================================================
-// SCALE
+// SCALE (UNCHANGED)
 // ==================================================
 function openScale(SCALE_PORT, BAUD_RATE, TERMINAL_UUID) {
   console.log(`🔌 OPENING SCALE: ${SCALE_PORT} @ ${BAUD_RATE}`);
@@ -91,8 +127,10 @@ function openScale(SCALE_PORT, BAUD_RATE, TERMINAL_UUID) {
   scalePort.open(err => {
     if (err) {
       console.error("❌ SCALE OPEN FAILED:", err.message);
-      return setTimeout(() =>
-        openScale(SCALE_PORT, BAUD_RATE, TERMINAL_UUID), 3000);
+      return setTimeout(
+        () => openScale(SCALE_PORT, BAUD_RATE, TERMINAL_UUID),
+        3000
+      );
     }
 
     console.log("✅ SCALE CONNECTED");
@@ -100,18 +138,21 @@ function openScale(SCALE_PORT, BAUD_RATE, TERMINAL_UUID) {
   });
 
   scalePort.on("data", chunk =>
-    handleRawData(chunk, TERMINAL_UUID));
+    handleRawData(chunk, TERMINAL_UUID)
+  );
 
   scalePort.on("error", restartScale);
   scalePort.on("close", restartScale);
 }
 
 function restartScale() {
-  try { scalePort?.close(); } catch { }
+  try {
+    if (scalePort?.isOpen) scalePort.close();
+  } catch { }
 }
 
 // ==================================================
-// PARSER
+// PARSER (UNCHANGED)
 // ==================================================
 function handleRawData(chunk, TERMINAL_UUID) {
   buffer += chunk.toString("utf8");
@@ -136,7 +177,7 @@ function handleRawData(chunk, TERMINAL_UUID) {
 }
 
 // ==================================================
-// APP
+// APP LIFECYCLE
 // ==================================================
 app.whenReady().then(initApp);
 
