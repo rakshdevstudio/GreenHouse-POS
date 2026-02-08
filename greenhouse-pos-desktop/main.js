@@ -4,27 +4,23 @@ const fs = require("fs");
 const { SerialPort } = require("serialport");
 const axios = require("axios");
 
-process.on("uncaughtException", err => {
+/* ==================================================
+   HARD CRASH LOGGING (NO MORE SILENT FAILURES)
+================================================== */
+process.on("uncaughtException", (err) => {
   try {
-    fs.writeFileSync(
-      path.join(process.cwd(), "fatal.log"),
-      err.stack || err.toString()
+    const logPath = path.join(
+      app.getPath("desktop"),
+      "greenhouse-electron-crash.txt"
     );
+    fs.writeFileSync(logPath, err.stack || String(err));
   } catch { }
-  app.quit();
+  process.exit(1);
 });
 
-process.on("unhandledRejection", err => {
-  try {
-    fs.writeFileSync(
-      path.join(process.cwd(), "fatal.log"),
-      err?.stack || err?.toString()
-    );
-  } catch { }
-});
-// ==================================================
-// GLOBALS
-// ==================================================
+/* ==================================================
+   GLOBALS
+================================================== */
 let mainWindow;
 let scalePort;
 let buffer = "";
@@ -33,9 +29,9 @@ const SEND_INTERVAL = 200;
 
 const SERVER_URL = "https://greenhouse-pos-production.up.railway.app";
 
-// ==================================================
-// WINDOW
-// ==================================================
+/* ==================================================
+   WINDOW
+================================================== */
 function createWindow() {
   mainWindow = new BrowserWindow({
     width: 1200,
@@ -49,17 +45,18 @@ function createWindow() {
   mainWindow.loadURL("https://green-house-pos.vercel.app/");
 }
 
-// ==================================================
-// CONFIG LOADER (FROM EXE DIRECTORY)
-// ==================================================
+/* ==================================================
+   SAFE CONFIG LOADER (USERDATA ONLY)
+================================================== */
 function loadConfig(filename, defaults) {
   const configDir = app.getPath("userData"); // ✅ SAFE
   const filePath = path.join(configDir, filename);
 
   try {
     if (!fs.existsSync(filePath)) {
+      fs.mkdirSync(configDir, { recursive: true });
       fs.writeFileSync(filePath, JSON.stringify(defaults, null, 2), "utf8");
-      console.log(`🆕 Created ${filename} at`, filePath);
+      console.log(`🆕 Created ${filename} at ${filePath}`);
     }
     return JSON.parse(fs.readFileSync(filePath, "utf8"));
   } catch (err) {
@@ -68,31 +65,32 @@ function loadConfig(filename, defaults) {
   }
 }
 
-// ==================================================
-// INIT APP
-// ==================================================
+/* ==================================================
+   INIT APP
+================================================== */
 function initApp() {
-  // ================= SCALE CONFIG =================
+  /* ---------- SCALE CONFIG ---------- */
   const scaleConfig = loadConfig("scale-config.json", {
     terminal_uuid: "s1-c1",
     scale_port: "COM1",
     baud_rate: 9600,
   });
 
-  const TERMINAL_UUID = scaleConfig.terminal_uuid.trim().toLowerCase();
-  const SCALE_PORT = scaleConfig.scale_port;
-  const BAUD_RATE = scaleConfig.baud_rate;
+  const TERMINAL_UUID = String(scaleConfig.terminal_uuid || "")
+    .trim()
+    .toLowerCase();
+  const SCALE_PORT = scaleConfig.scale_port || "COM1";
+  const BAUD_RATE = scaleConfig.baud_rate || 9600;
 
   if (!TERMINAL_UUID) {
-    console.error("❌ terminal_uuid missing in scale-config.json");
+    console.error("❌ terminal_uuid missing");
     app.quit();
     return;
   }
 
-  // ================= PRINTER CONFIG =================
+  /* ---------- PRINTER CONFIG ---------- */
   const printerConfig = loadConfig("printer-config.json", {
-    printer_name: "", // must match Windows printer name
-    silent: true,
+    printer_name: "", // empty = system default
     store: {
       name: "Greenhouse Supermarket",
       address_lines: [],
@@ -101,16 +99,25 @@ function initApp() {
 
   console.log("🏷 TERMINAL:", TERMINAL_UUID);
   console.log("⚖ SCALE:", SCALE_PORT);
-  console.log("🖨 PRINTER:", printerConfig.printer_name || "(system default)");
+  console.log(
+    "🖨 PRINTER:",
+    printerConfig.printer_name || "(System Default)"
+  );
 
-  createWindow();
+  try {
+    createWindow();
+  } catch (err) {
+    console.error("❌ Window creation failed", err);
+    throw err;
+  }
+
   openScale(SCALE_PORT, BAUD_RATE, TERMINAL_UUID);
   setupPrinting(printerConfig);
 }
 
-// ==================================================
-// SCALE (UNCHANGED & STABLE)
-// ==================================================
+/* ==================================================
+   SCALE (UNCHANGED, STABLE)
+================================================== */
 function openScale(SCALE_PORT, BAUD_RATE, TERMINAL_UUID) {
   console.log(`🔌 OPENING SCALE: ${SCALE_PORT} @ ${BAUD_RATE}`);
 
@@ -120,7 +127,7 @@ function openScale(SCALE_PORT, BAUD_RATE, TERMINAL_UUID) {
     autoOpen: false,
   });
 
-  scalePort.open(err => {
+  scalePort.open((err) => {
     if (err) {
       console.error("❌ SCALE OPEN FAILED:", err.message);
       return setTimeout(
@@ -128,12 +135,13 @@ function openScale(SCALE_PORT, BAUD_RATE, TERMINAL_UUID) {
         3000
       );
     }
-
     console.log("✅ SCALE CONNECTED");
     scalePort.set({ dtr: true, rts: true });
   });
 
-  scalePort.on("data", chunk => handleRawData(chunk, TERMINAL_UUID));
+  scalePort.on("data", (chunk) =>
+    handleRawData(chunk, TERMINAL_UUID)
+  );
   scalePort.on("error", restartScale);
   scalePort.on("close", restartScale);
 }
@@ -144,9 +152,9 @@ function restartScale() {
   } catch { }
 }
 
-// ==================================================
-// SCALE PARSER (UNCHANGED)
-// ==================================================
+/* ==================================================
+   SCALE PARSER
+================================================== */
 function handleRawData(chunk, TERMINAL_UUID) {
   buffer += chunk.toString("utf8");
   const lines = buffer.split(/\r?\n/);
@@ -175,61 +183,51 @@ function handleRawData(chunk, TERMINAL_UUID) {
   }
 }
 
-// ==================================================
-// 🖨 PRINTING (SILENT, PRINTER-AGNOSTIC)
-// ==================================================
+/* ==================================================
+   🖨 PRINTING (SILENT, PRINTER-AGNOSTIC)
+================================================== */
 function setupPrinting(printerConfig) {
-  ipcMain.handle("print-receipt-html", async (_event, receiptHtml) => {
+  ipcMain.handle("print-receipt-html", async (_e, receiptHtml) => {
     if (!receiptHtml) return;
 
-    const printWindow = new BrowserWindow({
+    const win = new BrowserWindow({
       show: false,
-      webPreferences: {
-        sandbox: false,
-      },
+      webPreferences: { sandbox: false },
     });
 
-    const wrappedHtml = `
-        <html>
-          <head>
-            <meta charset="utf-8" />
-            <style>
-              body {
-                font-family: monospace;
-                margin: 0;
-                padding: 0;
-              }
-            </style>
-          </head>
-          <body>
-            ${receiptHtml}
-          </body>
-        </html>
-      `;
+    const html = `
+      <html>
+        <head>
+          <meta charset="utf-8" />
+          <style>
+            body { font-family: monospace; margin: 0; padding: 0; }
+          </style>
+        </head>
+        <body>${receiptHtml}</body>
+      </html>
+    `;
 
-    await printWindow.loadURL(
+    await win.loadURL(
       "data:text/html;charset=utf-8," +
-      encodeURIComponent(wrappedHtml)
+      encodeURIComponent(html)
     );
 
-    printWindow.webContents.on("did-finish-load", () => {
-      printWindow.webContents.print(
+    win.webContents.on("did-finish-load", () => {
+      win.webContents.print(
         {
           silent: true,
           printBackground: true,
           deviceName: printerConfig.printer_name || undefined,
         },
-        () => {
-          printWindow.close();
-        }
+        () => win.close()
       );
     });
   });
 }
 
-// ==================================================
-// APP LIFECYCLE
-// ==================================================
+/* ==================================================
+   APP LIFECYCLE
+================================================== */
 app.whenReady().then(initApp);
 
 app.on("window-all-closed", () => {
