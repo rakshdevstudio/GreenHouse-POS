@@ -3,6 +3,8 @@ const path = require("path");
 const fs = require("fs");
 const { SerialPort } = require("serialport");
 const axios = require("axios");
+const escpos = require("escpos");
+const USB = require("escpos-usb");
 
 app.commandLine.appendSwitch("disable-gpu");
 app.commandLine.appendSwitch("disable-software-rasterizer");
@@ -190,83 +192,44 @@ function handleRawData(chunk, TERMINAL_UUID) {
 ================================================== */
 function setupPrinting(printerConfig) {
   ipcMain.handle("print-receipt-html", async (_event, receiptHtml) => {
-    console.log("🖨 PRINT HANDLER CALLED");
+    console.log("🖨 RAW PRINT HANDLER CALLED");
 
-    if (!receiptHtml) {
-      console.log("❌ No receipt HTML received");
-      return;
-    }
+    try {
+      const device = new escpos.USB(); // auto-detect EPSON USB
+      const printer = new escpos.Printer(device, { encoding: "CP437" });
 
-    console.log(
-      "🖨 PRINTING TO:",
-      printerConfig.printer_name || "(system default)"
-    );
+      device.open(() => {
+        printer
+          .align("CT")
+          .style("B")
+          .text(printerConfig.store?.name || "Greenhouse Supermarket")
+          .style("NORMAL");
 
-    const printWindow = new BrowserWindow({
-      show: false,
-      webPreferences: {
-        sandbox: false,
-        contextIsolation: false,
-        nodeIntegration: false,
-        disableDialogs: true
-      }
-    });
-
-    const wrappedHtml = `
-      <html>
-        <head>
-          <meta charset="utf-8" />
-          <style>
-            body {
-              width: 80mm;              /* FIX 4 */
-              margin: 0;
-              padding: 0;
-              font-family: monospace;
-            }
-          </style>
-        </head>
-        <body>
-          ${receiptHtml}
-        </body>
-      </html>
-    `;
-
-    await printWindow.loadURL(
-      "data:text/html;charset=utf-8," +
-      encodeURIComponent(wrappedHtml)
-    );
-
-    printWindow.webContents.on("did-finish-load", () => {
-      console.log("🖨 PRINT WINDOW LOADED");
-
-      // 🔥 FIX 2: Delay before printing
-      setTimeout(() => {
-        printWindow.webContents.print(
-          {
-            silent: true,
-            printBackground: true,
-            deviceName: printerConfig.printer_name || undefined,
-
-            // 🔥 FIX 1: CORRECT RECEIPT PAGE SIZE
-            pageSize: {
-              width: 80000,   // 80mm in microns
-              height: 200000  // long receipt
-            },
-            margins: {
-              marginType: "none"
-            }
-          },
-          (success, errorType) => {
-            if (!success) {
-              console.error("❌ PRINT FAILED:", errorType);
-            } else {
-              console.log("✅ PRINT SENT TO WINDOWS SPOOLER");
-            }
-            printWindow.close();
-          }
+        (printerConfig.store?.address_lines || []).forEach(line =>
+          printer.text(line)
         );
-      }, 300);
-    });
+
+        printer
+          .text("--------------------------------")
+          .align("LT");
+
+        // Strip HTML → plain text
+        const text = receiptHtml
+          .replace(/<[^>]+>/g, "")
+          .replace(/&nbsp;/g, " ");
+
+        text.split("\n").forEach(line => printer.text(line));
+
+        printer
+          .text("--------------------------------")
+          .cut()
+          .close();
+
+        console.log("✅ RAW PRINT SENT TO EPSON");
+      });
+    } catch (err) {
+      console.error("❌ RAW PRINT FAILED", err);
+    }
   });
 }
 
