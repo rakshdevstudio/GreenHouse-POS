@@ -1,4 +1,4 @@
-// src/pages/POS.jsx
+x// src/pages/POS.jsx
 import React, { useEffect, useState, useMemo, useRef } from "react";
 import api, { getApiBase } from "../lib/api";
 
@@ -921,11 +921,11 @@ export default function POS() {
       // 🔥 Auto-print immediately after checkout (Electron / Desktop)
       setTimeout(() => {
         try {
-          if (window.electron && window.electron.printReceipt) {
-            window.electron.printReceipt({
-              invoice: lastInvoice,
-              html: document.querySelector(".receipt-preview")?.outerHTML || "",
-            });
+          if (window.electron && window.electron.print) {
+            const receiptHtml =
+              document.querySelector(".receipt-preview")?.outerHTML || "";
+
+            window.electron.print(receiptHtml);
           } else {
             window.print(); // browser fallback
           }

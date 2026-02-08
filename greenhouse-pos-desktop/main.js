@@ -4,6 +4,24 @@ const fs = require("fs");
 const { SerialPort } = require("serialport");
 const axios = require("axios");
 
+process.on("uncaughtException", err => {
+  try {
+    fs.writeFileSync(
+      path.join(process.cwd(), "fatal.log"),
+      err.stack || err.toString()
+    );
+  } catch { }
+  app.quit();
+});
+
+process.on("unhandledRejection", err => {
+  try {
+    fs.writeFileSync(
+      path.join(process.cwd(), "fatal.log"),
+      err?.stack || err?.toString()
+    );
+  } catch { }
+});
 // ==================================================
 // GLOBALS
 // ==================================================
@@ -168,22 +186,22 @@ function setupPrinting(printerConfig) {
     });
 
     const wrappedHtml = `
-      <html>
-        <head>
-          <meta charset="utf-8" />
-          <style>
-            body {
-              font-family: monospace;
-              margin: 0;
-              padding: 0;
-            }
-          </style>
-        </head>
-        <body>
-          ${receiptHtml}
-        </body>
-      </html>
-    `;
+        <html>
+          <head>
+            <meta charset="utf-8" />
+            <style>
+              body {
+                font-family: monospace;
+                margin: 0;
+                padding: 0;
+              }
+            </style>
+          </head>
+          <body>
+            ${receiptHtml}
+          </body>
+        </html>
+      `;
 
     await printWindow.loadURL(
       "data:text/html;charset=utf-8," +

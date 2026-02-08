@@ -4,32 +4,24 @@ contextBridge.exposeInMainWorld("electron", {
   // ================= SCALE =================
   /**
    * Listen to live scale data from main.js
-   * Usage in frontend:
+   * Usage:
    * window.electron.onScaleData(({ weightKg }) => { ... })
    */
   onScaleData: (callback) => {
     const listener = (_event, data) => callback(data);
     ipcRenderer.on("scale-data", listener);
 
-    // cleanup helper (optional)
+    // cleanup helper
     return () => ipcRenderer.removeListener("scale-data", listener);
   },
 
   // ================= PRINT =================
   /**
-   * Silent receipt print
+   * Silent HTML receipt print
    * Usage:
-   * window.electron.printReceipt(order)
+   * window.electron.print(receiptHtml)
    */
-  printReceipt: (order) => {
-    return ipcRenderer.invoke("print-receipt", order);
-  },
-
-  // ================= DEBUG (OPTIONAL) =================
-  /**
-   * For debugging printer without physical print
-   */
-  printToPDF: () => {
-    return ipcRenderer.invoke("debug-print-pdf");
+  print: (receiptHtml) => {
+    return ipcRenderer.invoke("print-receipt-html", receiptHtml);
   }
 });
