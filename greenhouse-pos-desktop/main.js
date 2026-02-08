@@ -3,8 +3,6 @@ const path = require("path");
 const fs = require("fs");
 const { SerialPort } = require("serialport");
 const axios = require("axios");
-const escpos = require("escpos");
-const USB = require("escpos-usb");
 
 app.commandLine.appendSwitch("disable-gpu");
 app.commandLine.appendSwitch("disable-software-rasterizer");
@@ -192,44 +190,70 @@ function handleRawData(chunk, TERMINAL_UUID) {
 ================================================== */
 function setupPrinting(printerConfig) {
   ipcMain.handle("print-receipt-html", async (_event, receiptHtml) => {
-    console.log("🖨 RAW PRINT HANDLER CALLED");
+    console.log("🖨 PRINT HANDLER CALLED");
+    console.log(
+      "🖨 PRINTING TO:",
+      printerConfig.printer_name || "(System Default)"
+    );
 
-    try {
-      const device = new escpos.USB(); // auto-detect EPSON USB
-      const printer = new escpos.Printer(device, { encoding: "CP437" });
-
-      device.open(() => {
-        printer
-          .align("CT")
-          .style("B")
-          .text(printerConfig.store?.name || "Greenhouse Supermarket")
-          .style("NORMAL");
-
-        (printerConfig.store?.address_lines || []).forEach(line =>
-          printer.text(line)
-        );
-
-        printer
-          .text("--------------------------------")
-          .align("LT");
-
-        // Strip HTML → plain text
-        const text = receiptHtml
-          .replace(/<[^>]+>/g, "")
-          .replace(/&nbsp;/g, " ");
-
-        text.split("\n").forEach(line => printer.text(line));
-
-        printer
-          .text("--------------------------------")
-          .cut()
-          .close();
-
-        console.log("✅ RAW PRINT SENT TO EPSON");
-      });
-    } catch (err) {
-      console.error("❌ RAW PRINT FAILED", err);
+    if (!receiptHtml) {
+      console.log("❌ No receipt HTML received");
+      return;
     }
+
+    const printWindow = new BrowserWindow({
+      show: false,
+      webPreferences: { sandbox: false },
+    });
+
+    const wrappedHtml = `
+      <html>
+        <head>
+          <meta charset="utf-8" />
+          <style>
+            body {
+              font-family: monospace;
+              margin: 0;
+              padding: 0;
+              width: 80mm;
+            }
+          </style>
+        </head>
+        <body>${receiptHtml}</body>
+      </html>
+    `;
+
+    await printWindow.loadURL(
+      "data:text/html;charset=utf-8," +
+      encodeURIComponent(wrappedHtml)
+    );
+
+    printWindow.webContents.on("did-finish-load", () => {
+      printWindow.webContents.print(
+        {
+          silent: true,
+          printBackground: true,
+          deviceName: printerConfig.printer_name || undefined,
+
+          margins: {
+            marginType: "none",
+          },
+
+          pageSize: {
+            width: 80000,   // 80mm in microns (CRITICAL)
+            height: 200000, // large height so receipt doesn’t clip
+          },
+        },
+        (success, errorType) => {
+          if (!success) {
+            console.error("❌ PRINT FAILED:", errorType);
+          } else {
+            console.log("✅ PRINT SENT TO WINDOWS SPOOLER");
+          }
+          printWindow.close();
+        }
+      );
+    });
   });
 }
 
