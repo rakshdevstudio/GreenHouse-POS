@@ -187,39 +187,64 @@ function handleRawData(chunk, TERMINAL_UUID) {
    🖨 PRINTING (SILENT, PRINTER-AGNOSTIC)
 ================================================== */
 function setupPrinting(printerConfig) {
-  ipcMain.handle("print-receipt-html", async (_e, receiptHtml) => {
-    if (!receiptHtml) return;
+  ipcMain.handle("print-receipt-html", async (_event, receiptHtml) => {
+    console.log("🖨 PRINT HANDLER CALLED");
 
-    const win = new BrowserWindow({
+    console.log("🖨 PRINTING TO:", printerConfig.printer_name || "(system default)");
+
+    if (!receiptHtml) {
+      console.log("❌ No receipt HTML received");
+      return;
+    }
+
+    const printWindow = new BrowserWindow({
       show: false,
-      webPreferences: { sandbox: false },
+      webPreferences: {
+        sandbox: false,
+      },
     });
 
-    const html = `
+    const wrappedHtml = `
       <html>
         <head>
           <meta charset="utf-8" />
           <style>
-            body { font-family: monospace; margin: 0; padding: 0; }
+            body {
+              font-family: monospace;
+              margin: 0;
+              padding: 0;
+            }
           </style>
         </head>
-        <body>${receiptHtml}</body>
+        <body>
+          ${receiptHtml}
+        </body>
       </html>
     `;
 
-    await win.loadURL(
+    await printWindow.loadURL(
       "data:text/html;charset=utf-8," +
-      encodeURIComponent(html)
+      encodeURIComponent(wrappedHtml)
     );
 
-    win.webContents.on("did-finish-load", () => {
-      win.webContents.print(
+    printWindow.webContents.on("did-finish-load", () => {
+      console.log("🖨 PRINT WINDOW LOADED");
+
+      printWindow.webContents.print(
         {
           silent: true,
           printBackground: true,
           deviceName: printerConfig.printer_name || undefined,
         },
-        () => win.close()
+        (success, error) => {
+          if (!success) {
+            console.error("❌ PRINT FAILED:", error);
+          } else {
+            console.log("✅ PRINT SENT TO WINDOWS SPOOLER");
+          }
+
+          printWindow.close();
+        }
       );
     });
   });
