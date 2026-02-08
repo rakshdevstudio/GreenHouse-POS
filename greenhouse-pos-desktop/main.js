@@ -4,6 +4,8 @@ const fs = require("fs");
 const { SerialPort } = require("serialport");
 const axios = require("axios");
 
+app.commandLine.appendSwitch("disable-gpu");
+app.commandLine.appendSwitch("disable-software-rasterizer");
 /* ==================================================
    HARD CRASH LOGGING (NO MORE SILENT FAILURES)
 ================================================== */
@@ -190,18 +192,24 @@ function setupPrinting(printerConfig) {
   ipcMain.handle("print-receipt-html", async (_event, receiptHtml) => {
     console.log("🖨 PRINT HANDLER CALLED");
 
-    console.log("🖨 PRINTING TO:", printerConfig.printer_name || "(system default)");
-
     if (!receiptHtml) {
       console.log("❌ No receipt HTML received");
       return;
     }
 
+    console.log(
+      "🖨 PRINTING TO:",
+      printerConfig.printer_name || "(system default)"
+    );
+
     const printWindow = new BrowserWindow({
       show: false,
       webPreferences: {
         sandbox: false,
-      },
+        contextIsolation: false,
+        nodeIntegration: false,
+        disableDialogs: true
+      }
     });
 
     const wrappedHtml = `
@@ -210,9 +218,10 @@ function setupPrinting(printerConfig) {
           <meta charset="utf-8" />
           <style>
             body {
-              font-family: monospace;
+              width: 80mm;              /* FIX 4 */
               margin: 0;
               padding: 0;
+              font-family: monospace;
             }
           </style>
         </head>
@@ -230,22 +239,33 @@ function setupPrinting(printerConfig) {
     printWindow.webContents.on("did-finish-load", () => {
       console.log("🖨 PRINT WINDOW LOADED");
 
-      printWindow.webContents.print(
-        {
-          silent: true,
-          printBackground: true,
-          deviceName: printerConfig.printer_name || undefined,
-        },
-        (success, error) => {
-          if (!success) {
-            console.error("❌ PRINT FAILED:", error);
-          } else {
-            console.log("✅ PRINT SENT TO WINDOWS SPOOLER");
-          }
+      // 🔥 FIX 2: Delay before printing
+      setTimeout(() => {
+        printWindow.webContents.print(
+          {
+            silent: true,
+            printBackground: true,
+            deviceName: printerConfig.printer_name || undefined,
 
-          printWindow.close();
-        }
-      );
+            // 🔥 FIX 1: CORRECT RECEIPT PAGE SIZE
+            pageSize: {
+              width: 80000,   // 80mm in microns
+              height: 200000  // long receipt
+            },
+            margins: {
+              marginType: "none"
+            }
+          },
+          (success, errorType) => {
+            if (!success) {
+              console.error("❌ PRINT FAILED:", errorType);
+            } else {
+              console.log("✅ PRINT SENT TO WINDOWS SPOOLER");
+            }
+            printWindow.close();
+          }
+        );
+      }, 300);
     });
   });
 }
