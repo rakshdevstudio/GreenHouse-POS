@@ -1,9 +1,12 @@
-const { app, BrowserWindow } = require("electron");
+const { app, BrowserWindow, ipcMain } = require("electron");
 const path = require("path");
 const fs = require("fs");
 const { SerialPort } = require("serialport");
 const axios = require("axios");
 
+// ==================================================
+// GLOBALS
+// ==================================================
 let mainWindow;
 let scalePort;
 let buffer = "";
@@ -29,42 +32,34 @@ function createWindow() {
 }
 
 // ==================================================
-// INIT APP (CONFIGS + SCALE)
+// CONFIG LOADER (FROM EXE DIRECTORY)
 // ==================================================
-function initApp() {
+function loadConfig(filename, defaults) {
   const exeDir = path.dirname(app.getPath("exe"));
+  const filePath = path.join(exeDir, filename);
 
-  // ================= SCALE CONFIG =================
-  const scaleConfigPath = path.join(exeDir, "scale-config.json");
-
-  const DEFAULT_SCALE_CONFIG = {
-    terminal_uuid: "s1-c1",
-    scale_port: "COM1",
-    baud_rate: 9600
-  };
-
-  let scaleConfig = DEFAULT_SCALE_CONFIG;
-
-  try {
-    if (!fs.existsSync(scaleConfigPath)) {
-      fs.writeFileSync(
-        scaleConfigPath,
-        JSON.stringify(DEFAULT_SCALE_CONFIG, null, 2),
-        "utf8"
-      );
-      console.log("🆕 Created scale-config.json:", scaleConfigPath);
-    }
-
-    scaleConfig = JSON.parse(fs.readFileSync(scaleConfigPath, "utf8"));
-    console.log("📄 Loaded scale-config.json");
-
-  } catch (err) {
-    console.error("❌ Scale config error:", err.message);
+  if (!fs.existsSync(filePath)) {
+    fs.writeFileSync(filePath, JSON.stringify(defaults, null, 2), "utf8");
+    console.log(`🆕 Created ${filename} at`, filePath);
   }
 
-  const TERMINAL_UUID = scaleConfig.terminal_uuid?.trim().toLowerCase();
-  const SCALE_PORT = scaleConfig.scale_port || "COM1";
-  const BAUD_RATE = scaleConfig.baud_rate || 9600;
+  return JSON.parse(fs.readFileSync(filePath, "utf8"));
+}
+
+// ==================================================
+// INIT APP
+// ==================================================
+function initApp() {
+  // ================= SCALE CONFIG =================
+  const scaleConfig = loadConfig("scale-config.json", {
+    terminal_uuid: "s1-c1",
+    scale_port: "COM1",
+    baud_rate: 9600,
+  });
+
+  const TERMINAL_UUID = scaleConfig.terminal_uuid.trim().toLowerCase();
+  const SCALE_PORT = scaleConfig.scale_port;
+  const BAUD_RATE = scaleConfig.baud_rate;
 
   if (!TERMINAL_UUID) {
     console.error("❌ terminal_uuid missing in scale-config.json");
@@ -73,47 +68,26 @@ function initApp() {
   }
 
   // ================= PRINTER CONFIG =================
-  const printerConfigPath = path.join(exeDir, "printer-config.json");
-
-  const DEFAULT_PRINTER_CONFIG = {
-    printer_name: "EPSON TM-T82",
-    paper_width: 80,
-    cut: true,
+  const printerConfig = loadConfig("printer-config.json", {
+    printer_name: "", // must match Windows printer name
+    silent: true,
     store: {
       name: "Greenhouse Supermarket",
-      address_lines: []
-    }
-  };
+      address_lines: [],
+    },
+  });
 
-  let printerConfig = DEFAULT_PRINTER_CONFIG;
-
-  try {
-    if (!fs.existsSync(printerConfigPath)) {
-      fs.writeFileSync(
-        printerConfigPath,
-        JSON.stringify(DEFAULT_PRINTER_CONFIG, null, 2),
-        "utf8"
-      );
-      console.log("🆕 Created printer-config.json:", printerConfigPath);
-    }
-
-    printerConfig = JSON.parse(fs.readFileSync(printerConfigPath, "utf8"));
-    console.log("🖨 Loaded printer-config.json");
-
-  } catch (err) {
-    console.error("❌ Printer config error:", err.message);
-  }
-
-  // 🔎 Logs for sanity check
   console.log("🏷 TERMINAL:", TERMINAL_UUID);
-  console.log("🖨 PRINTER:", printerConfig.printer_name);
+  console.log("⚖ SCALE:", SCALE_PORT);
+  console.log("🖨 PRINTER:", printerConfig.printer_name || "(system default)");
 
   createWindow();
   openScale(SCALE_PORT, BAUD_RATE, TERMINAL_UUID);
+  setupPrinting(printerConfig);
 }
 
 // ==================================================
-// SCALE (UNCHANGED)
+// SCALE (UNCHANGED & STABLE)
 // ==================================================
 function openScale(SCALE_PORT, BAUD_RATE, TERMINAL_UUID) {
   console.log(`🔌 OPENING SCALE: ${SCALE_PORT} @ ${BAUD_RATE}`);
@@ -137,10 +111,7 @@ function openScale(SCALE_PORT, BAUD_RATE, TERMINAL_UUID) {
     scalePort.set({ dtr: true, rts: true });
   });
 
-  scalePort.on("data", chunk =>
-    handleRawData(chunk, TERMINAL_UUID)
-  );
-
+  scalePort.on("data", chunk => handleRawData(chunk, TERMINAL_UUID));
   scalePort.on("error", restartScale);
   scalePort.on("close", restartScale);
 }
@@ -152,7 +123,7 @@ function restartScale() {
 }
 
 // ==================================================
-// PARSER (UNCHANGED)
+// SCALE PARSER (UNCHANGED)
 // ==================================================
 function handleRawData(chunk, TERMINAL_UUID) {
   buffer += chunk.toString("utf8");
@@ -168,12 +139,70 @@ function handleRawData(chunk, TERMINAL_UUID) {
 
     mainWindow?.webContents.send("scale-data", { weightKg });
 
-    axios.post(`${SERVER_URL}/scale/weight`, {
-      type: "scale",
-      terminal_uuid: TERMINAL_UUID,
-      weight_kg: weightKg,
-    }).catch(() => { });
+    const now = Date.now();
+    if (now - lastSent < SEND_INTERVAL) return;
+    lastSent = now;
+
+    axios
+      .post(`${SERVER_URL}/scale/weight`, {
+        type: "scale",
+        terminal_uuid: TERMINAL_UUID,
+        weight_kg: weightKg,
+      })
+      .catch(() => { });
   }
+}
+
+// ==================================================
+// 🖨 PRINTING (SILENT, PRINTER-AGNOSTIC)
+// ==================================================
+function setupPrinting(printerConfig) {
+  ipcMain.handle("print-receipt-html", async (_event, receiptHtml) => {
+    if (!receiptHtml) return;
+
+    const printWindow = new BrowserWindow({
+      show: false,
+      webPreferences: {
+        sandbox: false,
+      },
+    });
+
+    const wrappedHtml = `
+      <html>
+        <head>
+          <meta charset="utf-8" />
+          <style>
+            body {
+              font-family: monospace;
+              margin: 0;
+              padding: 0;
+            }
+          </style>
+        </head>
+        <body>
+          ${receiptHtml}
+        </body>
+      </html>
+    `;
+
+    await printWindow.loadURL(
+      "data:text/html;charset=utf-8," +
+      encodeURIComponent(wrappedHtml)
+    );
+
+    printWindow.webContents.on("did-finish-load", () => {
+      printWindow.webContents.print(
+        {
+          silent: true,
+          printBackground: true,
+          deviceName: printerConfig.printer_name || undefined,
+        },
+        () => {
+          printWindow.close();
+        }
+      );
+    });
+  });
 }
 
 // ==================================================
@@ -182,6 +211,8 @@ function handleRawData(chunk, TERMINAL_UUID) {
 app.whenReady().then(initApp);
 
 app.on("window-all-closed", () => {
-  try { scalePort?.close(); } catch { }
+  try {
+    scalePort?.close();
+  } catch { }
   app.quit();
 });
