@@ -53,15 +53,19 @@ function createWindow() {
 // CONFIG LOADER (FROM EXE DIRECTORY)
 // ==================================================
 function loadConfig(filename, defaults) {
-  const exeDir = path.dirname(app.getPath("exe"));
-  const filePath = path.join(exeDir, filename);
+  const configDir = app.getPath("userData"); // ✅ SAFE
+  const filePath = path.join(configDir, filename);
 
-  if (!fs.existsSync(filePath)) {
-    fs.writeFileSync(filePath, JSON.stringify(defaults, null, 2), "utf8");
-    console.log(`🆕 Created ${filename} at`, filePath);
+  try {
+    if (!fs.existsSync(filePath)) {
+      fs.writeFileSync(filePath, JSON.stringify(defaults, null, 2), "utf8");
+      console.log(`🆕 Created ${filename} at`, filePath);
+    }
+    return JSON.parse(fs.readFileSync(filePath, "utf8"));
+  } catch (err) {
+    console.error(`❌ Failed to load ${filename}`, err);
+    return defaults;
   }
-
-  return JSON.parse(fs.readFileSync(filePath, "utf8"));
 }
 
 // ==================================================
