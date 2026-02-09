@@ -266,13 +266,7 @@ function setupPrinting(printerConfig) {
             },
 
             // CRITICAL FIX #7: Disable scaling (must be 100%)
-            scaleFactor: 100,
-
-            // CRITICAL FIX #8: Single page per job
-            pageRanges: [{
-              from: 0,
-              to: 0
-            }]
+            scaleFactor: 100
           },
           (success, errorType) => {
             if (!success) {
@@ -286,9 +280,17 @@ function setupPrinting(printerConfig) {
       }, 500); // 500ms render delay - CRITICAL for thermal printers
     };
 
-    // Register BOTH events for maximum compatibility
-    printWindow.webContents.on("did-finish-load", executePrint);
-    printWindow.once("ready-to-show", executePrint);
+    // CRITICAL: Use once() to prevent duplicate execution
+    // Both events may fire, but we only want to print once
+    let printed = false;
+    const safeExecutePrint = () => {
+      if (printed) return;
+      printed = true;
+      executePrint();
+    };
+
+    printWindow.webContents.once("did-finish-load", safeExecutePrint);
+    printWindow.once("ready-to-show", safeExecutePrint);
 
     await printWindow.loadURL(
       "data:text/html;charset=utf-8," +
