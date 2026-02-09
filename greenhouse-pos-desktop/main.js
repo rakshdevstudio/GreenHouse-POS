@@ -156,12 +156,13 @@ function setupPrinting(printerConfig) {
               @page { size: 80mm auto; margin: 0; }
               
               body {
-                width: 80mm;
-                margin: 0;
-                padding: 3mm 2mm;
-                font-family: "Courier New", Courier, monospace;
-                font-size: 10px;
-                line-height: 1.4;
+                width: 72mm; /* Safe width for 80mm paper (usually ~72mm printable) */
+                margin: 0 auto;
+                padding: 2mm 0;
+                font-family: Arial, Helvetica, sans-serif; /* Thicker than Courier */
+                font-weight: bold; /* Make text darker/bolder */
+                font-size: 11px;
+                line-height: 1.3;
                 color: #000;
                 background: #fff;
               }
