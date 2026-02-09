@@ -485,7 +485,24 @@ async function getInvoices(params = {}) {
 
     // Merge: Offline on top (pending), followed by online
     // Deduplicate? (Offline created are distinct from online DB IDs usually)
-    return [...offlineInvoices, ...(Array.isArray(onlineInvoices) ? onlineInvoices : [])];
+    // Normalize response: handle both array and object shapes
+    let onlineList = [];
+    if (Array.isArray(onlineInvoices)) {
+      onlineList = onlineInvoices;
+    } else if (onlineInvoices && typeof onlineInvoices === 'object') {
+      if (Array.isArray(onlineInvoices.invoices)) onlineList = onlineInvoices.invoices;
+      else if (Array.isArray(onlineInvoices.rows)) onlineList = onlineInvoices.rows;
+      else if (Array.isArray(onlineInvoices.data)) onlineList = onlineInvoices.data;
+    }
+
+    // Log for debugging visibility
+    if (!Array.isArray(onlineInvoices) && onlineList.length > 0) {
+      console.log(`🔌 Normalized invoices response: extracted ${onlineList.length} items from object`);
+    }
+
+    // Merge: Offline on top (pending), followed by online
+    // Deduplicate? (Offline created are distinct from online DB IDs usually)
+    return [...offlineInvoices, ...onlineList];
   } catch (err) {
     console.error("❌ getInvoices online fetch failed:", err);
     // If online call fails, at least return offline ones

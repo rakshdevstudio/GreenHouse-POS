@@ -1,6 +1,5 @@
-// src/pages/Invoices.jsx
-import React, { useEffect, useState } from "react";
-import api from "../lib/api";
+import React, { useEffect, useState, useRef } from "react";
+import api, { getApiBase } from "../lib/api";
 
 function formatDateTime(iso) {
   if (!iso) return "-";
@@ -32,6 +31,9 @@ export default function Invoices() {
   const [error, setError] = useState(null);
   const [expandedId, setExpandedId] = useState(null);
   const [lastRefreshed, setLastRefreshed] = useState(null);
+
+  // NEW: WS ref
+  const wsRef = useRef(null);
 
   // NEW: currently "selected" invoice (for secret shortcut)
   const [selectedId, setSelectedId] = useState(null);
@@ -86,7 +88,103 @@ export default function Invoices() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // 🔒 Secret owner shortcut: Ctrl + Shift + Delete/Backspace => void selected invoice
+  // � WebSocket for live updates (Mirrors POS.jsx logic)
+  useEffect(() => {
+    let mounted = true;
+    let reconnectTimer = null;
+
+    async function connectWs() {
+      try {
+        if (!mounted) return;
+
+        // Clean up previous
+        if (wsRef.current) {
+          try { wsRef.current.close(); } catch (e) { }
+          wsRef.current = null;
+        }
+
+        let base = "";
+        try {
+          base = await getApiBase();
+        } catch (err) {
+          console.warn("Invoices: Failed to resolve API base for WS", err);
+        }
+
+        // Determine WS origin
+        let origin = "";
+        try {
+          const parsed = new URL(base);
+          origin = parsed.origin;
+        } catch (e) {
+          origin = (typeof window !== 'undefined' && window.location && window.location.origin) ? window.location.origin : '';
+        }
+
+        if (!mounted) return;
+
+        const scheme = origin.startsWith("https:") ? "wss:" : "ws:";
+        const host = origin.replace(/^https?:/, "");
+
+        const token = localStorage.getItem("STORE_TOKEN") || localStorage.getItem("ADMIN_TOKEN") || "";
+        const terminalUuid = localStorage.getItem("TERMINAL_UUID") || "unknown-invoices-tab";
+
+        const url = `${scheme}${host}/ws?terminal_uuid=${encodeURIComponent(terminalUuid)}` +
+          (token ? `&token=${encodeURIComponent(token)}` : "");
+
+        console.log("Invoices: Connecting WS...", url);
+        const ws = new WebSocket(url);
+        wsRef.current = ws;
+
+        ws.onopen = () => {
+          console.log("Invoices: WS Connected");
+        };
+
+        ws.onmessage = (evt) => {
+          try {
+            const msg = JSON.parse(evt.data);
+            if (!msg) return;
+
+            if (msg.type === "invoice_created") {
+              console.log("Invoices: Received invoice_created event, refreshing...");
+              loadInvoices();
+            }
+          } catch (err) {
+            console.warn("Invoices: WS message parse error", err);
+          }
+        };
+
+        ws.onclose = () => {
+          console.log("Invoices: WS Closed");
+          if (mounted) {
+            reconnectTimer = setTimeout(connectWs, 5000); // Simple reconnect
+          }
+        };
+
+        ws.onerror = (err) => {
+          console.warn("Invoices: WS Error", err);
+          try { ws.close(); } catch (e) { }
+        };
+
+      } catch (err) {
+        console.error("Invoices: WS Setup failed", err);
+        if (mounted) {
+          reconnectTimer = setTimeout(connectWs, 5000);
+        }
+      }
+    }
+
+    connectWs();
+
+    return () => {
+      mounted = false;
+      if (reconnectTimer) clearTimeout(reconnectTimer);
+      if (wsRef.current) {
+        try { wsRef.current.close(); } catch (e) { }
+        wsRef.current = null;
+      }
+    };
+  }, []);
+
+  // �🔒 Secret owner shortcut: Ctrl + Shift + Delete/Backspace => void selected invoice
   useEffect(() => {
     function handleKeyDown(e) {
       // No invoice selected: nothing to do
@@ -242,9 +340,8 @@ export default function Invoices() {
               return (
                 <div
                   key={id}
-                  className={`invoice-card ${
-                    isOpen ? "invoice-card--open" : ""
-                  } ${isSelected ? "invoice-card--selected" : ""}`}
+                  className={`invoice-card ${isOpen ? "invoice-card--open" : ""
+                    } ${isSelected ? "invoice-card--selected" : ""}`}
                 >
                   {/* Main row */}
                   <button
