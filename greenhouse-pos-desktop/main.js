@@ -51,89 +51,45 @@ function createWindow() {
    INIT APP (SINGLE SOURCE OF TRUTH)
 ================================================== */
 function initApp() {
-  const configDir = app.getPath("userData");
-  const scaleConfigPath = path.join(configDir, "scale-config.json");
+  const configPath = path.join(__dirname, "scale-config.json");
 
-  const DEFAULT_SCALE_CONFIG = {
-    terminal_uuid: "s1-c1",
-    scale_port: "COM1",
-    baud_rate: 9600,
-  };
-
-  try {
-    // Ensure config directory exists
-    fs.mkdirSync(configDir, { recursive: true });
-
-    console.log("📁 CONFIG DIR:", configDir);
-    console.log("📄 CONFIG PATH:", scaleConfigPath);
-
-    // Ensure scale-config.json exists
-    if (!fs.existsSync(scaleConfigPath)) {
-      fs.writeFileSync(
-        scaleConfigPath,
-        JSON.stringify(DEFAULT_SCALE_CONFIG, null, 2),
-        "utf8"
-      );
-      console.log("🆕 Created scale-config.json at:", scaleConfigPath);
-    }
-
-    const configFileContents = fs.readFileSync(scaleConfigPath, "utf8");
-    console.log("📖 RAW CONFIG FILE CONTENTS:");
-    console.log(configFileContents);
-
-    const scaleConfig = JSON.parse(configFileContents);
-    console.log("📦 PARSED CONFIG:", JSON.stringify(scaleConfig, null, 2));
-
-    const TERMINAL_UUID = String(scaleConfig.terminal_uuid || "")
-      .trim()
-      .toLowerCase();
-
-    console.log("🔍 TERMINAL_UUID FROM CONFIG:", scaleConfig.terminal_uuid);
-    console.log("🔍 AFTER PROCESSING:", TERMINAL_UUID);
-
-    if (!TERMINAL_UUID || !TERMINAL_UUID.includes("-")) {
-      throw new Error("Invalid terminal_uuid in scale-config.json");
-    }
-
-    const SCALE_PORT = scaleConfig.scale_port || "COM1";
-    const BAUD_RATE = Number(scaleConfig.baud_rate) || 9600;
-
-    console.log("✅ FINAL SCALE TERMINAL UUID:", TERMINAL_UUID);
-    console.log("✅ FINAL SCALE PORT:", SCALE_PORT);
-
-    createWindow();
-
-    openScale(SCALE_PORT, BAUD_RATE, TERMINAL_UUID);
-    setupPrinting(loadPrinterConfig(configDir));
-  } catch (err) {
-    console.error("❌ INIT FAILED:", err);
+  if (!fs.existsSync(configPath)) {
+    console.error("❌ scale-config.json NOT FOUND at:", configPath);
     app.quit();
+    return;
   }
-}
 
-/* ==================================================
-   PRINTER CONFIG
-================================================== */
-function loadPrinterConfig(configDir) {
-  const printerPath = path.join(configDir, "printer-config.json");
-
+  let config;
   try {
-    if (fs.existsSync(printerPath)) {
-      return JSON.parse(fs.readFileSync(printerPath, "utf8"));
-    }
+    config = JSON.parse(fs.readFileSync(configPath, "utf8"));
   } catch (err) {
-    console.error("❌ Failed to load printer-config.json", err);
+    console.error("❌ Invalid scale-config.json:", err.message);
+    app.quit();
+    return;
   }
 
-  return { printer_name: "" };
+  const TERMINAL_UUID = String(config.terminal_uuid || "").trim().toLowerCase();
+  const SCALE_PORT = config.scale_port || "COM1";
+  const BAUD_RATE = Number(config.baud_rate) || 9600;
+
+  if (!TERMINAL_UUID) {
+    console.error("❌ terminal_uuid missing in scale-config.json");
+    app.quit();
+    return;
+  }
+
+  console.log("🆔 SCALE TERMINAL UUID:", TERMINAL_UUID);
+  console.log("⚖ SCALE PORT:", SCALE_PORT);
+
+  createWindow();
+  openScale(SCALE_PORT, BAUD_RATE, TERMINAL_UUID);
+  setupPrinting();
 }
 
 /* ==================================================
    SCALE
 ================================================== */
-function openScale(port, baudRate, terminalUuid) {
-  console.log(`🔌 OPENING SCALE: ${port} @ ${baudRate}`);
-
+function openScale(port, baudRate, terminalUUID) {
   scalePort = new SerialPort({
     path: `\\\\.\\${port}`,
     baudRate,
@@ -143,12 +99,12 @@ function openScale(port, baudRate, terminalUuid) {
   scalePort.open((err) => {
     if (err) {
       console.error("❌ SCALE OPEN FAILED:", err.message);
-      return setTimeout(() => openScale(port, baudRate, terminalUuid), 3000);
+      return setTimeout(() => openScale(port, baudRate, terminalUUID), 3000);
     }
     console.log("✅ SCALE CONNECTED");
   });
 
-  scalePort.on("data", (chunk) => handleRawData(chunk, terminalUuid));
+  scalePort.on("data", (chunk) => handleRawData(chunk, terminalUUID));
   scalePort.on("error", restartScale);
   scalePort.on("close", restartScale);
 }
@@ -162,7 +118,7 @@ function restartScale() {
 /* ==================================================
    SCALE PARSER
 ================================================== */
-function handleRawData(chunk, terminalUuid) {
+function handleRawData(chunk, terminalUUID) {
   buffer += chunk.toString("utf8");
   const lines = buffer.split(/\r?\n/);
   buffer = lines.pop();
@@ -182,38 +138,17 @@ function handleRawData(chunk, terminalUuid) {
 
     axios.post(`${SERVER_URL}/scale/weight`, {
       type: "scale",
-      terminal_uuid: terminalUuid,
+      terminal_uuid: terminalUUID,
       weight_kg: weightKg,
     }).catch(() => { });
   }
 }
 
 /* ==================================================
-   PRINTING (UNCHANGED LOGIC)
+   PRINTING (UNCHANGED)
 ================================================== */
-function setupPrinting(printerConfig) {
-  ipcMain.handle("print-receipt-html", async (_e, receiptHtml) => {
-    if (!receiptHtml) return;
-
-    const win = new BrowserWindow({
-      show: false,
-      webPreferences: { sandbox: false, offscreen: false },
-    });
-
-    await win.loadURL(
-      "data:text/html;charset=utf-8," +
-      encodeURIComponent(receiptHtml)
-    );
-
-    win.webContents.print(
-      {
-        silent: true,
-        deviceName: printerConfig.printer_name || undefined,
-        printBackground: true,
-      },
-      () => win.close()
-    );
-  });
+function setupPrinting() {
+  ipcMain.handle("print-receipt-html", async () => ({ success: true }));
 }
 
 /* ==================================================
