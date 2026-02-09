@@ -138,13 +138,14 @@ class SyncManager {
                 }
             );
 
-            // Extract server-assigned invoice ID
-            const serverId = response.data?.invoice?.id || response.data?.id || null;
+            // Extract server data (id, invoice_no, etc)
+            const serverData = response.data?.invoice || response.data || {};
+            const serverId = serverData.id || null;
 
-            // Mark as synced
-            this.storage.markInvoiceSynced(localId, serverId);
+            // Mark as synced and update with real invoice number
+            this.storage.markInvoiceSynced(localId, serverData);
 
-            console.log(`✅ Sync Manager: Synced ${localId} → server ID: ${serverId}`);
+            console.log(`✅ Sync Manager: Synced ${localId} → server ID: ${serverId}, No: ${serverData.invoice_no}`);
         } catch (err) {
             // Record failed attempt
             this.storage.recordSyncAttempt(localId, err);

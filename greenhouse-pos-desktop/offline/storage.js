@@ -134,17 +134,26 @@ class OfflineStorage {
     /**
      * Mark an invoice as successfully synced
      * @param {string} localId - Local invoice ID
-     * @param {string} [serverId] - Server-assigned invoice ID
+     * @param {Object} [serverData] - Server response data (id, invoice_no, etc)
      */
-    markInvoiceSynced(localId, serverId = null) {
+    markInvoiceSynced(localId, serverData = null) {
         try {
             const invoice = this.data.invoices.find(inv => inv.localId === localId);
 
             if (invoice) {
                 invoice.synced = true;
                 invoice.syncedAt = new Date().toISOString();
-                if (serverId) {
-                    invoice.serverId = serverId;
+                invoice.syncedAt = new Date().toISOString();
+
+                if (serverData) {
+                    if (serverData.id) invoice.serverId = serverData.id;
+
+                    // Update the actual invoice object with server details (e.g. real invoice_no)
+                    if (invoice.invoice) {
+                        if (serverData.id) invoice.invoice.id = serverData.id;
+                        if (serverData.invoice_no) invoice.invoice.invoice_no = serverData.invoice_no;
+                        if (serverData.created_at) invoice.invoice.created_at = serverData.created_at;
+                    }
                 }
 
                 this.saveData();
