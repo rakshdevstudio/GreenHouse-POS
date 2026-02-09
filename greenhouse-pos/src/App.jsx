@@ -33,24 +33,24 @@ export default function App() {
   const [adminError, setAdminError] = useState(null);
 
   // 🔐 check if store or admin is logged in
-// We distinguish between:
-// - "full" admin login (Admin panel)
-// - "overlay" admin (hidden 7-click owner unlock inside store shell)
-const storeToken = localStorage.getItem("STORE_TOKEN");
-const adminToken = localStorage.getItem("ADMIN_TOKEN");
-const adminMode = localStorage.getItem("ADMIN_MODE") || "full"; // "full" | "overlay"
+  // We distinguish between:
+  // - "full" admin login (Admin panel)
+  // - "overlay" admin (hidden 7-click owner unlock inside store shell)
+  const storeToken = localStorage.getItem("STORE_TOKEN");
+  const adminToken = localStorage.getItem("ADMIN_TOKEN");
+  const adminMode = localStorage.getItem("ADMIN_MODE") || "full"; // "full" | "overlay"
 
-const isStoreLoggedIn = !!storeToken;
+  const isStoreLoggedIn = !!storeToken;
 
-// Full admin shell only when ADMIN_MODE === "full"
-const isAdminLoggedIn = !!adminToken && adminMode === "full";
+  // Full admin shell only when ADMIN_MODE === "full"
+  const isAdminLoggedIn = !!adminToken && adminMode === "full";
 
-// Overlay admin (owner unlock in store shell) – still counts as “logged in”
-// but should NEVER activate the admin shell by itself.
-const isOverlayAdmin = !!adminToken && adminMode === "overlay";
+  // Overlay admin (owner unlock in store shell) – still counts as “logged in”
+  // but should NEVER activate the admin shell by itself.
+  const isOverlayAdmin = !!adminToken && adminMode === "overlay";
 
-// Overall “someone is logged in”
-const isLoggedIn = isStoreLoggedIn || isAdminLoggedIn || isOverlayAdmin;
+  // Overall “someone is logged in”
+  const isLoggedIn = isStoreLoggedIn || isAdminLoggedIn || isOverlayAdmin;
 
   // Ping backend health so status pill can show OK / offline
   useEffect(() => {
@@ -116,6 +116,28 @@ const isLoggedIn = isStoreLoggedIn || isAdminLoggedIn || isOverlayAdmin;
     };
   }, []);
 
+  // 🔌 PHASE 3: Listen for Electron network status changes
+  useEffect(() => {
+    if (window.electron && window.electron.onNetworkStatus) {
+      // Get initial status
+      window.electron.getNetworkStatus().then(status => {
+        api.setOfflineMode(!status.online);
+        setApiHealthy(status.online);
+      });
+
+      // Listen for changes
+      const cleanup = window.electron.onNetworkStatus(({ online }) => {
+        api.setOfflineMode(!online);
+        setApiHealthy(online);
+        console.log(`📡 Network changed: ${online ? 'ONLINE' : 'OFFLINE'}`);
+        // Force re-render key or trigger data refresh if needed
+        if (online) setForceRender(c => c + 1);
+      });
+
+      return cleanup;
+    }
+  }, []);
+
   // Hidden owner/admin unlock: click brand 7 times
   useEffect(() => {
     if (brandClickCount >= 7) {
@@ -144,25 +166,25 @@ const isLoggedIn = isStoreLoggedIn || isAdminLoggedIn || isOverlayAdmin;
       return;
     }
 
-      try {
-    const res = await api.adminLogin({
-      username: adminUser,
-      password: adminPass,
-    });
-    // store ADMIN_USERNAME for header display if needed
-    if (res && res.username) {
-      localStorage.setItem("ADMIN_USERNAME", res.username);
-    }
+    try {
+      const res = await api.adminLogin({
+        username: adminUser,
+        password: adminPass,
+      });
+      // store ADMIN_USERNAME for header display if needed
+      if (res && res.username) {
+        localStorage.setItem("ADMIN_USERNAME", res.username);
+      }
 
-    // 🔐 IMPORTANT: this is an *overlay* admin, not full Admin shell
-    localStorage.setItem("ADMIN_MODE", "overlay");
+      // 🔐 IMPORTANT: this is an *overlay* admin, not full Admin shell
+      localStorage.setItem("ADMIN_MODE", "overlay");
 
-    setShowAdminModal(false);
-    setAdminPass("");
-    // We intentionally do NOT redirect or reload.
-    // We stay in the store shell, but now admin-only actions (e.g. void invoice)
-    // can use the ADMIN_TOKEN under the hood.
-  } catch (err) {
+      setShowAdminModal(false);
+      setAdminPass("");
+      // We intentionally do NOT redirect or reload.
+      // We stay in the store shell, but now admin-only actions (e.g. void invoice)
+      // can use the ADMIN_TOKEN under the hood.
+    } catch (err) {
       console.error("admin login error", err);
       setAdminError(err.message || "Admin login failed");
     } finally {
@@ -171,16 +193,16 @@ const isLoggedIn = isStoreLoggedIn || isAdminLoggedIn || isOverlayAdmin;
   }
 
   function handleLogout() {
-  // Clear store/admin tokens and reload to show login page again
-  localStorage.removeItem("STORE_TOKEN");
-  localStorage.removeItem("STORE_ID");
-  localStorage.removeItem("STORE_NAME");
-  localStorage.removeItem("ADMIN_TOKEN");
-  localStorage.removeItem("ADMIN_USERNAME");
-  localStorage.removeItem("ADMIN_SELECTED_STORE_ID");
-  localStorage.removeItem("ADMIN_MODE"); // 👈 new
-  window.location.reload();
-}
+    // Clear store/admin tokens and reload to show login page again
+    localStorage.removeItem("STORE_TOKEN");
+    localStorage.removeItem("STORE_ID");
+    localStorage.removeItem("STORE_NAME");
+    localStorage.removeItem("ADMIN_TOKEN");
+    localStorage.removeItem("ADMIN_USERNAME");
+    localStorage.removeItem("ADMIN_SELECTED_STORE_ID");
+    localStorage.removeItem("ADMIN_MODE"); // 👈 new
+    window.location.reload();
+  }
 
   // 🧠 Decide what page content to show for store mode
   let content = null;
@@ -317,112 +339,112 @@ const isLoggedIn = isStoreLoggedIn || isAdminLoggedIn || isOverlayAdmin;
   // 👑 Admin shell ONLY when admin is logged in AND there is NO store logged in
   // (full back-office mode)
   // 👑 Admin shell whenever ADMIN_TOKEN exists
-// (admin can impersonate stores but stays in the admin UI)
-if (isAdminLoggedIn) {
-  let adminContent = null;
+  // (admin can impersonate stores but stays in the admin UI)
+  if (isAdminLoggedIn) {
+    let adminContent = null;
 
-  if (adminActiveView === "admin") {
-    adminContent = (
-      <AdminDashboard
-        onOpenStoreTab={(tab) => {
-          // tab is "pos" | "invoices" | "reports"
-          setAdminActiveView(tab || "pos");
-        }}
-      />
+    if (adminActiveView === "admin") {
+      adminContent = (
+        <AdminDashboard
+          onOpenStoreTab={(tab) => {
+            // tab is "pos" | "invoices" | "reports"
+            setAdminActiveView(tab || "pos");
+          }}
+        />
+      );
+    } else if (adminActiveView === "pos") {
+      adminContent = <POS />;
+    } else if (adminActiveView === "invoices") {
+      adminContent = <Invoices />;
+    } else if (adminActiveView === "reports") {
+      adminContent = <Reports />;
+    }
+
+    return (
+      <div className="app-shell">
+        <header className="app-nav">
+          <button
+            type="button"
+            className="app-brand"
+            onClick={handleBrandClick}
+          >
+            GREENHOUSE POS — Admin
+          </button>
+
+          <nav className="app-tabs">
+            <button
+              type="button"
+              className={
+                adminActiveView === "admin"
+                  ? "app-tab app-tab--active"
+                  : "app-tab"
+              }
+              onClick={() => setAdminActiveView("admin")}
+            >
+              Admin console
+            </button>
+            <button
+              type="button"
+              className={
+                adminActiveView === "pos"
+                  ? "app-tab app-tab--active"
+                  : "app-tab"
+              }
+              onClick={() => setAdminActiveView("pos")}
+            >
+              POS
+            </button>
+            <button
+              type="button"
+              className={
+                adminActiveView === "invoices"
+                  ? "app-tab app-tab--active"
+                  : "app-tab"
+              }
+              onClick={() => setAdminActiveView("invoices")}
+            >
+              Invoices
+            </button>
+            <button
+              type="button"
+              className={
+                adminActiveView === "reports"
+                  ? "app-tab app-tab--active"
+                  : "app-tab"
+              }
+              onClick={() => setAdminActiveView("reports")}
+            >
+              Reports
+            </button>
+          </nav>
+
+          <div className="app-status">
+            <span
+              className={
+                apiHealthy
+                  ? "status-pill status-pill--ok"
+                  : "status-pill status-pill--warn"
+              }
+            >
+              {apiHealthy ? "Admin online" : "API offline"}
+            </span>
+            <button
+              type="button"
+              className="btn-ghost"
+              onClick={handleLogout}
+              style={{ marginLeft: 8 }}
+            >
+              Logout
+            </button>
+          </div>
+        </header>
+
+        <main className="app-content">{adminContent}</main>
+
+        {adminModal}
+      </div>
     );
-  } else if (adminActiveView === "pos") {
-    adminContent = <POS />;
-  } else if (adminActiveView === "invoices") {
-    adminContent = <Invoices />;
-  } else if (adminActiveView === "reports") {
-    adminContent = <Reports />;
   }
-
-  return (
-    <div className="app-shell">
-      <header className="app-nav">
-        <button
-          type="button"
-          className="app-brand"
-          onClick={handleBrandClick}
-        >
-          GREENHOUSE POS — Admin
-        </button>
-
-        <nav className="app-tabs">
-          <button
-            type="button"
-            className={
-              adminActiveView === "admin"
-                ? "app-tab app-tab--active"
-                : "app-tab"
-            }
-            onClick={() => setAdminActiveView("admin")}
-          >
-            Admin console
-          </button>
-          <button
-            type="button"
-            className={
-              adminActiveView === "pos"
-                ? "app-tab app-tab--active"
-                : "app-tab"
-            }
-            onClick={() => setAdminActiveView("pos")}
-          >
-            POS
-          </button>
-          <button
-            type="button"
-            className={
-              adminActiveView === "invoices"
-                ? "app-tab app-tab--active"
-                : "app-tab"
-            }
-            onClick={() => setAdminActiveView("invoices")}
-          >
-            Invoices
-          </button>
-          <button
-            type="button"
-            className={
-              adminActiveView === "reports"
-                ? "app-tab app-tab--active"
-                : "app-tab"
-            }
-            onClick={() => setAdminActiveView("reports")}
-          >
-            Reports
-          </button>
-        </nav>
-
-        <div className="app-status">
-          <span
-            className={
-              apiHealthy
-                ? "status-pill status-pill--ok"
-                : "status-pill status-pill--warn"
-            }
-          >
-            {apiHealthy ? "Admin online" : "API offline"}
-          </span>
-          <button
-            type="button"
-            className="btn-ghost"
-            onClick={handleLogout}
-            style={{ marginLeft: 8 }}
-          >
-            Logout
-          </button>
-        </div>
-      </header>
-
-      <main className="app-content">{adminContent}</main>
-
-      {adminModal}
-    </div>
-  );
-}
 
   // ✅ Store-logged-in shell (normal staff, even if ADMIN_TOKEN also exists for extra powers)
   if (isStoreLoggedIn) {
