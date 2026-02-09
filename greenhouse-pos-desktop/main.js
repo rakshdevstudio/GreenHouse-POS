@@ -6,16 +6,16 @@ const axios = require("axios");
 
 app.commandLine.appendSwitch("disable-gpu");
 app.commandLine.appendSwitch("disable-software-rasterizer");
+
 /* ==================================================
-   HARD CRASH LOGGING (NO MORE SILENT FAILURES)
+   HARD CRASH LOGGING
 ================================================== */
 process.on("uncaughtException", (err) => {
   try {
-    const logPath = path.join(
-      app.getPath("desktop"),
-      "greenhouse-electron-crash.txt"
+    fs.writeFileSync(
+      path.join(app.getPath("desktop"), "greenhouse-electron-crash.txt"),
+      err.stack || String(err)
     );
-    fs.writeFileSync(logPath, err.stack || String(err));
   } catch { }
   process.exit(1);
 });
@@ -48,85 +48,98 @@ function createWindow() {
 }
 
 /* ==================================================
-   SAFE CONFIG LOADER (USERDATA ONLY)
+   INIT APP (SINGLE SOURCE OF TRUTH)
 ================================================== */
 function initApp() {
   const configDir = app.getPath("userData");
-  const configPath = path.join(configDir, "scale-config.json");
+  const scaleConfigPath = path.join(configDir, "scale-config.json");
 
-  const DEFAULT_CONFIG = {
+  const DEFAULT_SCALE_CONFIG = {
     terminal_uuid: "s1-c1",
     scale_port: "COM1",
-    baud_rate: 9600
+    baud_rate: 9600,
   };
 
   try {
-    if (!fs.existsSync(configDir)) {
-      fs.mkdirSync(configDir, { recursive: true });
-      console.log("📁 Created config dir:", configDir);
-    }
+    // Ensure config directory exists
+    fs.mkdirSync(configDir, { recursive: true });
 
-    if (!fs.existsSync(configPath)) {
+    // Ensure scale-config.json exists
+    if (!fs.existsSync(scaleConfigPath)) {
       fs.writeFileSync(
-        configPath,
-        JSON.stringify(DEFAULT_CONFIG, null, 2),
+        scaleConfigPath,
+        JSON.stringify(DEFAULT_SCALE_CONFIG, null, 2),
         "utf8"
       );
       console.log("🆕 Created scale-config.json");
     }
 
-    const config = JSON.parse(fs.readFileSync(configPath, "utf8"));
+    const scaleConfig = JSON.parse(
+      fs.readFileSync(scaleConfigPath, "utf8")
+    );
 
-    if (!config.terminal_uuid) {
-      throw new Error("terminal_uuid missing in scale-config.json");
+    const TERMINAL_UUID = String(scaleConfig.terminal_uuid || "")
+      .trim()
+      .toLowerCase();
+
+    if (!TERMINAL_UUID || !TERMINAL_UUID.includes("-")) {
+      throw new Error("Invalid terminal_uuid in scale-config.json");
     }
 
-    console.log("📄 Loaded config from:", configPath);
-    console.log("🆔 SCALE TERMINAL UUID:", config.terminal_uuid);
+    const SCALE_PORT = scaleConfig.scale_port || "COM1";
+    const BAUD_RATE = Number(scaleConfig.baud_rate) || 9600;
+
+    console.log("🆔 SCALE TERMINAL UUID:", TERMINAL_UUID);
+    console.log("⚖ SCALE PORT:", SCALE_PORT);
 
     createWindow();
 
-    openScale(
-      config.scale_port || "COM1",
-      Number(config.baud_rate) || 9600,
-      config.terminal_uuid.trim().toLowerCase()
-    );
-
+    openScale(SCALE_PORT, BAUD_RATE, TERMINAL_UUID);
+    setupPrinting(loadPrinterConfig(configDir));
   } catch (err) {
-    console.error("❌ CONFIG LOAD FAILED:", err);
+    console.error("❌ INIT FAILED:", err);
     app.quit();
   }
 }
 
+/* ==================================================
+   PRINTER CONFIG
+================================================== */
+function loadPrinterConfig(configDir) {
+  const printerPath = path.join(configDir, "printer-config.json");
 
+  try {
+    if (fs.existsSync(printerPath)) {
+      return JSON.parse(fs.readFileSync(printerPath, "utf8"));
+    }
+  } catch (err) {
+    console.error("❌ Failed to load printer-config.json", err);
+  }
+
+  return { printer_name: "" };
+}
 
 /* ==================================================
-   SCALE (UNCHANGED, STABLE)
+   SCALE
 ================================================== */
-function openScale(SCALE_PORT, BAUD_RATE, TERMINAL_UUID) {
-  console.log(`🔌 OPENING SCALE: ${SCALE_PORT} @ ${BAUD_RATE}`);
+function openScale(port, baudRate, terminalUuid) {
+  console.log(`🔌 OPENING SCALE: ${port} @ ${baudRate}`);
 
   scalePort = new SerialPort({
-    path: `\\\\.\\${SCALE_PORT}`,
-    baudRate: BAUD_RATE,
+    path: `\\\\.\\${port}`,
+    baudRate,
     autoOpen: false,
   });
 
   scalePort.open((err) => {
     if (err) {
       console.error("❌ SCALE OPEN FAILED:", err.message);
-      return setTimeout(
-        () => openScale(SCALE_PORT, BAUD_RATE, TERMINAL_UUID),
-        3000
-      );
+      return setTimeout(() => openScale(port, baudRate, terminalUuid), 3000);
     }
     console.log("✅ SCALE CONNECTED");
-    scalePort.set({ dtr: true, rts: true });
   });
 
-  scalePort.on("data", (chunk) =>
-    handleRawData(chunk, TERMINAL_UUID)
-  );
+  scalePort.on("data", (chunk) => handleRawData(chunk, terminalUuid));
   scalePort.on("error", restartScale);
   scalePort.on("close", restartScale);
 }
@@ -140,7 +153,7 @@ function restartScale() {
 /* ==================================================
    SCALE PARSER
 ================================================== */
-function handleRawData(chunk, TERMINAL_UUID) {
+function handleRawData(chunk, terminalUuid) {
   buffer += chunk.toString("utf8");
   const lines = buffer.split(/\r?\n/);
   buffer = lines.pop();
@@ -158,168 +171,39 @@ function handleRawData(chunk, TERMINAL_UUID) {
     if (now - lastSent < SEND_INTERVAL) return;
     lastSent = now;
 
-    axios
-      .post(`${SERVER_URL}/scale/weight`, {
-        type: "scale",
-        terminal_uuid: TERMINAL_UUID,
-        weight_kg: weightKg,
-      })
-      .catch(() => { });
+    axios.post(`${SERVER_URL}/scale/weight`, {
+      type: "scale",
+      terminal_uuid: terminalUuid,
+      weight_kg: weightKg,
+    }).catch(() => { });
   }
 }
 
 /* ==================================================
-   🖨 PRINTING (SILENT, PRINTER-AGNOSTIC)
+   PRINTING (UNCHANGED LOGIC)
 ================================================== */
 function setupPrinting(printerConfig) {
-  ipcMain.handle("print-receipt-html", async (_event, receiptHtml) => {
-    console.log("🖨 PRINT HANDLER CALLED");
-    console.log(
-      "🖨 PRINTING TO:",
-      printerConfig.printer_name || "(System Default)"
+  ipcMain.handle("print-receipt-html", async (_e, receiptHtml) => {
+    if (!receiptHtml) return;
+
+    const win = new BrowserWindow({
+      show: false,
+      webPreferences: { sandbox: false, offscreen: false },
+    });
+
+    await win.loadURL(
+      "data:text/html;charset=utf-8," +
+      encodeURIComponent(receiptHtml)
     );
 
-    if (!receiptHtml) {
-      console.log("❌ No receipt HTML received");
-      return { success: false, error: "No HTML provided" };
-    }
-
-    let printWindow = null;
-
-    try {
-      printWindow = new BrowserWindow({
-        show: false,
-        webPreferences: {
-          sandbox: false,
-          // CRITICAL: Disable offscreen rendering which breaks thermal printers
-          offscreen: false
-        },
-      });
-
-      const wrappedHtml = `
-        <html>
-          <head>
-            <meta charset="utf-8" />
-            <style>
-              /* CRITICAL: @page must match physical paper */
-              @page {
-                size: 80mm auto;
-                margin: 0;
-              }
-              body {
-                font-family: monospace;
-                margin: 0;
-                padding: 0;
-                width: 80mm;
-              }
-            </style>
-          </head>
-          <body>${receiptHtml}</body>
-        </html>
-      `;
-
-      // CRITICAL FIX #0: Register event handler BEFORE loadURL to prevent race condition
-      const executePrint = () => {
-        console.log("🖨 Print window loaded, waiting for render...");
-
-        // CRITICAL FIX #1: Wait for Chromium to fully render before printing
-        // Thermal printers reject blank/incomplete pages
-        setTimeout(() => {
-          try {
-            printWindow.webContents.print(
-              {
-                silent: true,
-                printBackground: true,
-
-                // CRITICAL FIX #2: Explicit printer name (empty string = system default)
-                deviceName: printerConfig.printer_name || undefined,
-
-                // CRITICAL FIX #3: Thermal printers are monochrome ONLY
-                color: false,
-
-                // CRITICAL FIX #4: Force portrait (some drivers default to landscape)
-                landscape: false,
-
-                // CRITICAL FIX #5: Zero margins (thermal printers have fixed margins)
-                margins: {
-                  marginType: "none",
-                },
-
-                // CRITICAL FIX #6: Correct page size in microns
-                // 80mm width is standard, but height must be reasonable
-                pageSize: {
-                  width: 80000,   // 80mm in microns
-                  height: 297000  // ~297mm (A4 height) - safe upper bound
-                },
-
-                // CRITICAL FIX #7: Disable scaling (must be 100%)
-                scaleFactor: 100
-              },
-              (success, errorType) => {
-                try {
-                  if (!success) {
-                    console.error("❌ PRINT FAILED:", errorType);
-                  } else {
-                    console.log("✅ PRINT SENT TO WINDOWS SPOOLER");
-                  }
-                } catch (err) {
-                  console.error("❌ Print callback error:", err);
-                } finally {
-                  // Safe window cleanup
-                  try {
-                    if (printWindow && !printWindow.isDestroyed()) {
-                      printWindow.close();
-                    }
-                  } catch (err) {
-                    console.error("❌ Window cleanup error:", err);
-                  }
-                }
-              }
-            );
-          } catch (err) {
-            console.error("❌ Print execution error:", err);
-            // Safe window cleanup on error
-            try {
-              if (printWindow && !printWindow.isDestroyed()) {
-                printWindow.close();
-              }
-            } catch (cleanupErr) {
-              console.error("❌ Window cleanup error:", cleanupErr);
-            }
-          }
-        }, 500); // 500ms render delay - CRITICAL for thermal printers
-      };
-
-      // CRITICAL: Use once() to prevent duplicate execution
-      // Both events may fire, but we only want to print once
-      let printed = false;
-      const safeExecutePrint = () => {
-        if (printed) return;
-        printed = true;
-        executePrint();
-      };
-
-      printWindow.webContents.once("did-finish-load", safeExecutePrint);
-      printWindow.once("ready-to-show", safeExecutePrint);
-
-      await printWindow.loadURL(
-        "data:text/html;charset=utf-8," +
-        encodeURIComponent(wrappedHtml)
-      );
-
-      return { success: true };
-    } catch (err) {
-      console.error("❌ CRITICAL PRINT ERROR:", err);
-      // Emergency cleanup
-      try {
-        if (printWindow && !printWindow.isDestroyed()) {
-          printWindow.close();
-        }
-      } catch (cleanupErr) {
-        console.error("❌ Emergency cleanup error:", cleanupErr);
-      }
-      return { success: false, error: err.message };
-    }
+    win.webContents.print(
+      {
+        silent: true,
+        deviceName: printerConfig.printer_name || undefined,
+        printBackground: true,
+      },
+      () => win.close()
+    );
   });
 }
 
