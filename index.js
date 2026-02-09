@@ -336,8 +336,9 @@ app.post('/scale/weight', (req, res) => {
 
   let delivered = 0;
   let openClients = 0;
+  const deliveredTo = []; // Track which clients received data
 
-  // First pass: exact terminal match
+  // Broadcast ONLY to WebSocket clients with matching terminal_uuid
   wss.clients.forEach((client) => {
     if (client.readyState === WebSocket.OPEN) {
       openClients++;
@@ -348,23 +349,24 @@ app.post('/scale/weight', (req, res) => {
         try {
           client.send(payload);
           delivered++;
+          deliveredTo.push(client.clientId || 'unknown');
         } catch (e) {
-          console.warn('WS send failed', e.message);
+          console.warn(`WS send failed to ${client.clientId}:`, e.message);
         }
       }
     }
   });
 
-  // Safety fallback: do NOT silently drop data
+  // Log delivery status
   if (delivered === 0) {
     console.warn(
-      `❌ scale ${terminalUuid}: no WS client connected for this terminal`
+      `❌ scale ${terminalUuid}: no WS client connected for this terminal (${openClients} total clients online)`
+    );
+  } else {
+    console.log(
+      `⚖️  scale ${terminalUuid}: ${latestWeight} kg → ${delivered} client(s) [${deliveredTo.join(', ')}]`
     );
   }
-
-  console.log(
-    `⚖️ scale ${terminalUuid}: ${latestWeight} kg → ${delivered} client(s)`
-  );
 
   return res.json({ ok: true });
 });
@@ -2393,23 +2395,47 @@ wss.on('connection', (ws, req) => {
   ws.isAlive = true;
   ws.on('pong', heartbeat);
 
+  // Generate unique client ID for debugging
+  ws.clientId = `ws-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+
   // attempt to read token from querystring (non-blocking)
   try {
     const u = new URL(req.url, 'http://localhost');
     const terminalUuid = u.searchParams.get('terminal_uuid');
 
-    if (!terminalUuid) {
+    if (!terminalUuid || terminalUuid.trim() === '') {
+      console.warn(`❌ WS connection rejected: missing terminal_uuid [${ws.clientId}]`);
       ws.close(1008, 'terminal_uuid required');
       return;
     }
 
-    ws.terminal_uuid = terminalUuid.toLowerCase();
-    console.log('🟢 WS connected → terminal', terminalUuid);
+    // Normalize to lowercase for consistent matching
+    ws.terminal_uuid = terminalUuid.trim().toLowerCase();
+
+    // Count existing connections for this terminal
+    let existingCount = 0;
+    wss.clients.forEach((client) => {
+      if (client !== ws && client.terminal_uuid === ws.terminal_uuid && client.readyState === WebSocket.OPEN) {
+        existingCount++;
+      }
+    });
+
+    if (existingCount > 0) {
+      console.warn(`⚠️  Multiple WS clients for terminal ${ws.terminal_uuid} (now ${existingCount + 1} total)`);
+    }
+
+    console.log(`🟢 WS connected → terminal ${ws.terminal_uuid} [${ws.clientId}]`);
   } catch (e) {
+    console.error(`❌ WS connection error [${ws.clientId}]:`, e.message);
     ws.terminal_uuid = null;
   }
 
-  console.info('WS client connected', { remote: req.socket.remoteAddress, origin: req.headers.origin });
+  console.info('WS client connected', {
+    clientId: ws.clientId,
+    terminal: ws.terminal_uuid || 'NONE',
+    remote: req.socket.remoteAddress,
+    origin: req.headers.origin
+  });
 
   ws.on('message', (raw) => {
     try {
