@@ -481,12 +481,35 @@ function setupOfflineHandlers() {
         };
       } else {
         // OFFLINE: Save locally
+        // OFFLINE: Save locally
         const localId = storage.saveInvoice(invoiceData, terminalConfig.terminal_uuid);
+
+        // 🔥 IMPORTANT: return FULL invoice shape
+        const offlineInvoice = {
+          id: localId,
+          ...invoiceData,
+          offline: true,
+          created_at: new Date().toISOString(),
+        };
+
+        // Calculate totals if frontend didn’t
+        offlineInvoice.subtotal =
+          invoiceData.subtotal ??
+          invoiceData.items?.reduce(
+            (sum, i) => sum + Number(i.amount || 0),
+            0
+          ) ??
+          0;
+
+        offlineInvoice.tax = invoiceData.tax ?? 0;
+        offlineInvoice.total =
+          invoiceData.total ??
+          offlineInvoice.subtotal + offlineInvoice.tax;
 
         return {
           success: true,
           online: false,
-          localId,
+          invoice: offlineInvoice,
           message: 'Invoice saved locally. Will sync when online.',
         };
       }
