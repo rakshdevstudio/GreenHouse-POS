@@ -44,8 +44,6 @@ export function isOfflineMode() {
   return OFFLINE_MODE;
 }
 
-// Detect if running in Electron (has window.electron from preload.js)
-// CRITICAL: Check for IPC capability, not just window.electron existence
 const isElectron = () => {
   return (
     typeof window !== 'undefined' &&
@@ -53,6 +51,7 @@ const isElectron = () => {
     typeof window.electron.login === 'function'
   );
 };
+
 
 /* ------------------------------------------------------------------ */
 /*  Low-level fetch wrapper                                           */
@@ -63,10 +62,13 @@ const __GET_CACHE = {}; // key -> { ts, value }
 const __GET_CACHE_TTL = 10000; // ms - short TTL to coalesce bursts
 
 async function call(path, opts = {}) {
-  // PHASE 3: Block HTTP calls when in Electron offline mode
+  // CRITICAL: Prevent failed fetches when offline in Electron
   if (isElectron() && isOfflineMode()) {
-    const url = `${API_BASE}${path}`;
-    console.warn('🚫 HTTP blocked in offline Electron mode:', url);
+    console.warn('🚫 HTTP blocked in offline Electron mode:', path);
+    // Return empty/safe defaults based on endpoint to prevent UI crashes
+    if (path === '/health') return { status: 'offline' };
+    if (path.includes('/products')) return [];
+    if (path.includes('/invoices')) return [];
     throw new Error('Offline mode - HTTP calls disabled');
   }
 
@@ -190,7 +192,7 @@ async function loginStore(arg1, arg2, arg3) {
     };
   }
 
-  // PHASE 3: Use Electron IPC if available (supports offline)
+  // 1. ELECTRON IPC PATH (Strict)
   if (isElectron()) {
     try {
       const res = await window.electron.login({
@@ -207,10 +209,9 @@ async function loginStore(arg1, arg2, arg3) {
         store_id: res.store?.id || res.store_id,
         user: res.user,
         store: res.store,
-        online: res.online, // Keep for logging
+        online: res.online,
       };
 
-      // Store tokens (compatible with backend response)
       if (normalized.token) {
         localStorage.setItem("STORE_TOKEN", normalized.token);
       }
@@ -226,13 +227,12 @@ async function loginStore(arg1, arg2, arg3) {
     }
   }
 
-  // FALLBACK: HTTP for web browsers
+  // 2. BROWSER HTTP PATH
   const res = await call("/auth/store-login", {
     method: "POST",
     body,
   });
 
-  // Backend returns: { token, store_id }
   if (res && res.token) {
     localStorage.setItem("STORE_TOKEN", res.token);
   }
@@ -293,6 +293,13 @@ async function adminLogin(arg1, arg2) {
 // NOTE: POS.jsx is already doing its own offline caching using
 // GH_PRODUCTS_CACHE, so here we just return what the server gives.
 async function getProducts(params = {}) {
+  // PHASE 3: Skip HTTP in Electron offline mode, force cache usage
+  if (isElectron() && isOfflineMode()) {
+    console.log('📴 Offline mode: Skipping product fetch, will use cache');
+    // Throw error to trigger cache fallback in POS.jsx
+    throw new Error('Offline mode - using cached products');
+  }
+
   const query = new URLSearchParams();
   if (params.store_id != null) {
     query.set("store_id", String(params.store_id));
@@ -358,7 +365,7 @@ async function deleteProduct(id) {
 
 // Create invoice (POS checkout) -> POST /invoices
 async function createInvoice(payload) {
-  // PHASE 3: Use Electron IPC if available (supports offline)
+  // 1. ELECTRON IPC PATH (Strict)
   if (isElectron()) {
     try {
       const res = await window.electron.createInvoice(payload);
@@ -389,7 +396,7 @@ async function createInvoice(payload) {
     }
   }
 
-  // FALLBACK: HTTP for web browsers
+  // 2. BROWSER HTTP PATH
   return call("/invoices", {
     method: "POST",
     body: payload,
@@ -590,6 +597,10 @@ async function scaleMock(weight_kg) {
 }
 
 async function health() {
+  // PHASE 3: Skip health check in Electron offline mode
+  if (isElectron() && isOfflineMode()) {
+    return { status: 'offline' };
+  }
   return call("/health");
 }
 
