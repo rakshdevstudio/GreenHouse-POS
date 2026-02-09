@@ -326,7 +326,7 @@ function initOfflineMode(terminalUuid) {
 
   try {
     // 1. Network detection
-    network.init();
+    network.init(SERVER_URL);
 
     // 2. Local storage
     storage.init();

@@ -19,9 +19,11 @@ class NetworkManager {
 
     /**
      * Initialize network monitoring
+     * @param {string} serverUrl - Backend API URL
      */
-    init() {
-        console.log('🌐 Network Manager: Initializing...');
+    init(serverUrl) {
+        console.log('🌐 Network Manager: Initializing with', serverUrl);
+        this.serverUrl = serverUrl;
 
         // Initial check
         this.checkConnection();
@@ -39,17 +41,39 @@ class NetworkManager {
      * More reliable than just checking network interface
      */
     async checkConnection() {
+        if (!this.serverUrl) {
+            // Fallback if init didn't provide URL
+            this.setOnline(true);
+            return;
+        }
+
         try {
-            // Try to resolve a reliable DNS
-            await new Promise((resolve, reject) => {
-                dns.resolve('www.google.com', (err) => {
-                    if (err) reject(err);
-                    else resolve();
-                });
+            const request = net.request({
+                method: 'GET',
+                url: `${this.serverUrl}/health`,
+                useSessionCookies: false
             });
 
-            this.setOnline(true);
+            request.on('response', (response) => {
+                // Any response (200, 404, 500) means we reached the server
+                this.setOnline(true);
+            });
+
+            request.on('error', (error) => {
+                console.warn('⚠️ Network Check Failed:', error.message);
+                this.setOnline(false);
+            });
+
+            // Timeout after 5 seconds
+            setTimeout(() => {
+                if (!request.finished) {
+                    request.abort();
+                }
+            }, 5000);
+
+            request.end();
         } catch (err) {
+            console.error('Network check error:', err);
             this.setOnline(false);
         }
     }
