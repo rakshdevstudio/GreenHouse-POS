@@ -19,8 +19,9 @@ if (rawBase && rawBase.trim() !== "") {
   if (origin.match(/:5173$|:5174$|:5175$/)) {
     API_BASE = origin.replace(/:\d+$/, ":4000");
   } else {
-    // Same-origin (Express serving React in production)
-    API_BASE = origin;
+    // In production, if VITE_API_BASE is missing, default to the known Railway backend
+    // instead of same-origin (because Vercel frontend != Railway backend).
+    API_BASE = "https://greenhouse-pos-production.up.railway.app";
   }
 }
 
