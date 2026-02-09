@@ -375,7 +375,7 @@ function setupOfflineHandlers() {
       if (network.isOnline()) {
         // ONLINE: Normal login to backend
         const response = await axios.post(
-          `${SERVER_URL}/auth/login`,
+          `${SERVER_URL}/auth/store-login`,
           { username, password },
           { timeout: 10000 }
         );
@@ -430,7 +430,7 @@ function setupOfflineHandlers() {
       if (network.isOnline()) {
         // ONLINE: Send to backend immediately
         const response = await axios.post(
-          `${SERVER_URL}/invoices/create`,
+          `${SERVER_URL}/invoices`,
           {
             ...invoiceData,
             terminal_uuid: terminalConfig.terminal_uuid,
