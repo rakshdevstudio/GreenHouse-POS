@@ -161,8 +161,13 @@ function setupPrinting(printerConfig) {
     let win;
     try {
       win = new BrowserWindow({
-        show: false,
-        webPreferences: { offscreen: false },
+        show: false, // Start hidden, show briefly later to force paint
+        width: 500,  // Explicit dimensions to ensure layout logic runs
+        height: 800,
+        webPreferences: {
+          offscreen: false,
+          backgroundThrottling: false // IMPORTANT: Ensure rendering happens even if backgrounded
+        },
       });
 
       const wrappedHtml = `
@@ -308,6 +313,10 @@ function setupPrinting(printerConfig) {
 
       win.webContents.once("did-finish-load", () => {
         setTimeout(() => {
+          // FIX: Briefly show window to force Chromium to paint the content
+          // Hidden windows sometimes have empty separate layers
+          win.showInactive();
+
           win.webContents.print(
             {
               silent: true,
