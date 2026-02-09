@@ -257,7 +257,7 @@ export default function POS() {
       });
     }
 
-    function connectWs() {
+    async function connectWs() {
       try {
         // close existing ws if any (avoid duplicate sockets)
         try {
@@ -268,21 +268,31 @@ export default function POS() {
           }
         } catch (e) { /* ignore */ }
 
-        const base = getApiBase(); // expected: full origin like "https://example.com" or "http://localhost:8080"
+        let base = '';
+        try {
+          base = await getApiBase();
+        } catch (err) {
+          console.warn("Failed to resolve API base for WS", err);
+        }
+
+        // expected: full origin like "https://example.com" or "http://localhost:8080"
         let origin = '';
         try {
           const parsed = new URL(base);
           origin = parsed.origin; // keeps scheme+host+port
         } catch (e) {
           // fallback to current page origin
+          // If base was empty/promise/invalid, we land here.
           origin = (typeof window !== 'undefined' && window.location && window.location.origin) ? window.location.origin : '';
         }
+
+        if (!mounted) return;
 
         // choose proper ws scheme
         const scheme = origin.startsWith('https:') ? 'wss:' : 'ws:';
         const host = origin.replace(/^https?:/, ''); // //host[:port]
 
-        const token = localStorage.getItem('TOKEN') || localStorage.getItem('AUTH_TOKEN') || '';
+        const token = localStorage.getItem('STORE_TOKEN') || localStorage.getItem('TOKEN') || localStorage.getItem('AUTH_TOKEN') || '';
 
         if (!terminalUuid) {
           console.warn("POS: ❌ terminalUuid missing, WS not connected");
