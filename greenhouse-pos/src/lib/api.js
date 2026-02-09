@@ -29,12 +29,29 @@ export function getApiBase() {
 }
 
 /* ------------------------------------------------------------------ */
-/*  PHASE 3: Electron Environment Detection                           */
+/*  PHASE 3: Electron Environment Detection + Offline Mode           */
 /* ------------------------------------------------------------------ */
 
+// Offline mode flag (frontend-only state)
+let OFFLINE_MODE = false;
+
+export function setOfflineMode(value) {
+  OFFLINE_MODE = value;
+  console.log(value ? '📴 Offline mode: ACTIVE' : '🟢 Offline mode: INACTIVE');
+}
+
+export function isOfflineMode() {
+  return OFFLINE_MODE;
+}
+
 // Detect if running in Electron (has window.electron from preload.js)
+// CRITICAL: Check for IPC capability, not just window.electron existence
 const isElectron = () => {
-  return typeof window !== 'undefined' && window.electron;
+  return (
+    typeof window !== 'undefined' &&
+    window.electron &&
+    typeof window.electron.login === 'function'
+  );
 };
 
 /* ------------------------------------------------------------------ */
@@ -46,6 +63,13 @@ const __GET_CACHE = {}; // key -> { ts, value }
 const __GET_CACHE_TTL = 10000; // ms - short TTL to coalesce bursts
 
 async function call(path, opts = {}) {
+  // PHASE 3: Block HTTP calls when in Electron offline mode
+  if (isElectron() && isOfflineMode()) {
+    const url = `${API_BASE}${path}`;
+    console.warn('🚫 HTTP blocked in offline Electron mode:', url);
+    throw new Error('Offline mode - HTTP calls disabled');
+  }
+
   const url = `${API_BASE}${path}`;
   const headers = Object.assign({}, opts.headers || {});
 
@@ -174,18 +198,28 @@ async function loginStore(arg1, arg2, arg3) {
         password: body.password,
       });
 
+      // Set offline mode flag based on response
+      setOfflineMode(res.online === false);
+
+      // Normalize response to match HTTP shape
+      const normalized = {
+        token: res.token,
+        store_id: res.store?.id || res.store_id,
+        user: res.user,
+        store: res.store,
+        online: res.online, // Keep for logging
+      };
+
       // Store tokens (compatible with backend response)
-      if (res && res.token) {
-        localStorage.setItem("STORE_TOKEN", res.token);
+      if (normalized.token) {
+        localStorage.setItem("STORE_TOKEN", normalized.token);
       }
-      if (res && res.store?.id != null) {
-        localStorage.setItem("STORE_ID", String(res.store.id));
-      } else if (res && res.store_id != null) {
-        localStorage.setItem("STORE_ID", String(res.store_id));
+      if (normalized.store_id != null) {
+        localStorage.setItem("STORE_ID", String(normalized.store_id));
       }
 
       console.log(res.online ? '🟢 Online login via IPC' : '📴 Offline login via cached session');
-      return res;
+      return normalized;
     } catch (err) {
       console.error('❌ Electron login failed:', err);
       throw err;
@@ -330,20 +364,23 @@ async function createInvoice(payload) {
       const res = await window.electron.createInvoice(payload);
 
       // Handle offline response
-      if (!res.online) {
+      if (res.online === false) {
         console.log('📴 Offline invoice created:', res.localId);
-        // Return format compatible with existing code
+
+        // Normalize to match HTTP response shape
         return {
           invoice: {
             id: res.localId,
+            invoice_no: res.localId, // Use localId as invoice number for display
             ...payload,
+            created_at: new Date().toISOString(),
             offline: true,
           },
-          message: res.message,
+          message: res.message || "Invoice saved locally",
         };
       }
 
-      // Online response
+      // Online response - already normalized by backend
       console.log('🟢 Online invoice created via IPC');
       return res;
     } catch (err) {
