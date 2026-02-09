@@ -249,7 +249,7 @@ function setupPrinting(printerConfig) {
                 printBackground: true,
 
                 // CRITICAL FIX #2: Explicit printer name (empty string = system default)
-                deviceName: printerConfig.printer_name || "",
+                deviceName: printerConfig.printer_name || undefined,
 
                 // CRITICAL FIX #3: Thermal printers are monochrome ONLY
                 color: false,
