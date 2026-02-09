@@ -1,6 +1,7 @@
 const { app, BrowserWindow, ipcMain } = require("electron");
 const path = require("path");
 const fs = require("fs");
+const os = require("os");
 const { SerialPort } = require("serialport");
 const axios = require("axios");
 
@@ -43,8 +44,14 @@ function createWindow() {
 // CONFIG + SCALE INIT (AFTER APP READY)
 // ==================================================
 function initApp() {
-  // 🔒 SAFE to call now
-  const exeDir = path.dirname(app.getPath("exe"));
+  // FIX: In dev mode, use process.cwd() to find scale-config.json in project root
+  // In prod, use standard exe location
+  const exeDir = app.isPackaged
+    ? path.dirname(app.getPath("exe"))
+    : process.cwd();
+
+  console.log("📂 EXE DIR:", exeDir);
+
   const configPath = path.join(exeDir, "scale-config.json");
 
   const DEFAULT_CONFIG = {
@@ -84,6 +91,10 @@ function initApp() {
 
   console.log("🏷 TERMINAL:", TERMINAL_UUID);
   console.log("⚖ SCALE PORT:", SCALE_PORT);
+
+  // DEBUG: Scale config loading
+  console.log('DEBUG: initApp loaded config:', JSON.stringify(config));
+  console.log('DEBUG: initApp derived TERMINAL_UUID:', TERMINAL_UUID);
 
   createWindow();
   openScale(SCALE_PORT, BAUD_RATE, TERMINAL_UUID);
@@ -139,6 +150,10 @@ function loadPrinterConfig(exeDir) {
 // ==================================================
 function setupPrinting(printerConfig) {
   ipcMain.handle("print-receipt-html", async (_event, receiptHtml) => {
+    // DEBUG: Printer input
+    console.log('PRINT HTML LENGTH:', receiptHtml?.length);
+    console.log('PRINT HTML PREVIEW:', receiptHtml?.slice(0, 200));
+
     if (!receiptHtml) {
       return { success: false, error: "No HTML provided" };
     }
@@ -301,15 +316,20 @@ function setupPrinting(printerConfig) {
               pageSize: { width: 80000, height: 297000 },
               scaleFactor: 100,
             },
-            () => win.close()
+            () => {
+              // Cleanup logic could go here, but win.close handling covers it mostly
+              win.close();
+            }
           );
         }, 500);
       });
 
-      await win.loadURL(
-        "data:text/html;charset=utf-8," +
-        encodeURIComponent(wrappedHtml)
-      );
+      // FIX: Write to temp file to avoid data-uri limits/encoding issues
+      const tempPath = path.join(os.tmpdir(), `receipt-${Date.now()}.html`);
+      fs.writeFileSync(tempPath, wrappedHtml, 'utf8');
+
+      console.log('🖨 Printing via temp file:', tempPath);
+      await win.loadFile(tempPath);
 
       return { success: true };
     } catch (err) {
@@ -616,6 +636,10 @@ function handleRawData(chunk, TERMINAL_UUID) {
     const now = Date.now();
     if (now - lastSent < SEND_INTERVAL) continue;
     lastSent = now;
+
+    // DEBUG: Scale POST
+    console.log('SCALE TERMINAL UUID:', TERMINAL_UUID);
+    console.log('SCALE POST PAYLOAD:', { terminal_uuid: TERMINAL_UUID, weight_kg: weightKg });
 
     axios.post(`${SERVER_URL}/scale/weight`, {
       type: "scale",
