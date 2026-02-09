@@ -326,7 +326,7 @@ function setupPrinting(printerConfig) {
               color: false,
               landscape: false,
               margins: { marginType: "none" },
-              pageSize: { width: 80000, height: 297000 },
+              pageSize: { width: 80000, height: 3000000 }, // 3 meters height (effectively continuous)
               scaleFactor: 100,
             },
             () => win.close()

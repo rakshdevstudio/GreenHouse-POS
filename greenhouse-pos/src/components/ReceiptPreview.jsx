@@ -39,10 +39,23 @@ export default function ReceiptPreview({ invoice, lastInvoice }) {
     );
   }
 
-  const handlePrint = () => {
-    // Simple: trigger browser print. Our global @media print CSS
-    // will hide the rest of the POS UI and keep only the receipt.
-    window.print();
+  const handlePrint = async () => {
+    if (window.electron && window.electron.print) {
+      const receiptElement = document.querySelector('.receipt-preview');
+      if (receiptElement) {
+        // Clone to avoid modifying the visible DOM
+        const clone = receiptElement.cloneNode(true);
+
+        // Remove empty state if present, although the invoice check above handles most cases
+        // but let's be safe 
+
+        const html = clone.outerHTML;
+        await window.electron.print(html);
+      }
+    } else {
+      // Fallback for browser testing
+      window.print();
+    }
   };
 
   return (
