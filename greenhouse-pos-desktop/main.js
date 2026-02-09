@@ -1,28 +1,9 @@
-const { app, BrowserWindow, ipcMain } = require("electron");
+const { app, BrowserWindow } = require("electron");
 const path = require("path");
 const fs = require("fs");
 const { SerialPort } = require("serialport");
 const axios = require("axios");
 
-app.commandLine.appendSwitch("disable-gpu");
-app.commandLine.appendSwitch("disable-software-rasterizer");
-
-/* ==================================================
-   HARD CRASH LOGGING
-================================================== */
-process.on("uncaughtException", (err) => {
-  try {
-    fs.writeFileSync(
-      path.join(app.getPath("desktop"), "greenhouse-electron-crash.txt"),
-      err.stack || String(err)
-    );
-  } catch { }
-  process.exit(1);
-});
-
-/* ==================================================
-   GLOBALS
-================================================== */
 let mainWindow;
 let scalePort;
 let buffer = "";
@@ -31,9 +12,9 @@ const SEND_INTERVAL = 200;
 
 const SERVER_URL = "https://greenhouse-pos-production.up.railway.app";
 
-/* ==================================================
-   WINDOW
-================================================== */
+// ==================================================
+// WINDOW
+// ==================================================
 function createWindow() {
   mainWindow = new BrowserWindow({
     width: 1200,
@@ -47,30 +28,42 @@ function createWindow() {
   mainWindow.loadURL("https://green-house-pos.vercel.app/");
 }
 
-/* ==================================================
-   INIT APP (SINGLE SOURCE OF TRUTH)
-================================================== */
+// ==================================================
+// CONFIG + SCALE INIT (AFTER APP READY)
+// ==================================================
 function initApp() {
-  const configPath = path.join(__dirname, "scale-config.json");
+  // 🔒 SAFE to call now
+  const exeDir = path.dirname(app.getPath("exe"));
+  const configPath = path.join(exeDir, "scale-config.json");
 
-  if (!fs.existsSync(configPath)) {
-    console.error("❌ scale-config.json NOT FOUND at:", configPath);
-    app.quit();
-    return;
-  }
+  const DEFAULT_CONFIG = {
+    terminal_uuid: "s1-c1",
+    scale_port: "COM1",
+    baud_rate: 9600
+  };
 
-  let config;
+  let config = DEFAULT_CONFIG;
+
   try {
+    if (!fs.existsSync(configPath)) {
+      fs.writeFileSync(
+        configPath,
+        JSON.stringify(DEFAULT_CONFIG, null, 2),
+        "utf8"
+      );
+      console.log("🆕 Created scale-config.json at:", configPath);
+    }
+
     config = JSON.parse(fs.readFileSync(configPath, "utf8"));
+    console.log("📄 Loaded scale config:", configPath);
+
   } catch (err) {
-    console.error("❌ Invalid scale-config.json:", err.message);
-    app.quit();
-    return;
+    console.error("❌ Config error:", err.message);
   }
 
-  const TERMINAL_UUID = String(config.terminal_uuid || "").trim().toLowerCase();
+  const TERMINAL_UUID = config.terminal_uuid?.trim().toLowerCase();
   const SCALE_PORT = config.scale_port || "COM1";
-  const BAUD_RATE = Number(config.baud_rate) || 9600;
+  const BAUD_RATE = config.baud_rate || 9600;
 
   if (!TERMINAL_UUID) {
     console.error("❌ terminal_uuid missing in scale-config.json");
@@ -78,47 +71,49 @@ function initApp() {
     return;
   }
 
-  console.log("🆔 SCALE TERMINAL UUID:", TERMINAL_UUID);
-  console.log("⚖ SCALE PORT:", SCALE_PORT);
-
+  console.log("🏷 TERMINAL:", TERMINAL_UUID);
   createWindow();
   openScale(SCALE_PORT, BAUD_RATE, TERMINAL_UUID);
-  setupPrinting();
 }
 
-/* ==================================================
-   SCALE
-================================================== */
-function openScale(port, baudRate, terminalUUID) {
+// ==================================================
+// SCALE
+// ==================================================
+function openScale(SCALE_PORT, BAUD_RATE, TERMINAL_UUID) {
+  console.log(`🔌 OPENING SCALE: ${SCALE_PORT} @ ${BAUD_RATE}`);
+
   scalePort = new SerialPort({
-    path: `\\\\.\\${port}`,
-    baudRate,
+    path: `\\\\.\\${SCALE_PORT}`,
+    baudRate: BAUD_RATE,
     autoOpen: false,
   });
 
-  scalePort.open((err) => {
+  scalePort.open(err => {
     if (err) {
       console.error("❌ SCALE OPEN FAILED:", err.message);
-      return setTimeout(() => openScale(port, baudRate, terminalUUID), 3000);
+      return setTimeout(() =>
+        openScale(SCALE_PORT, BAUD_RATE, TERMINAL_UUID), 3000);
     }
+
     console.log("✅ SCALE CONNECTED");
+    scalePort.set({ dtr: true, rts: true });
   });
 
-  scalePort.on("data", (chunk) => handleRawData(chunk, terminalUUID));
+  scalePort.on("data", chunk =>
+    handleRawData(chunk, TERMINAL_UUID));
+
   scalePort.on("error", restartScale);
   scalePort.on("close", restartScale);
 }
 
 function restartScale() {
-  try {
-    if (scalePort?.isOpen) scalePort.close();
-  } catch { }
+  try { scalePort?.close(); } catch { }
 }
 
-/* ==================================================
-   SCALE PARSER
-================================================== */
-function handleRawData(chunk, terminalUUID) {
+// ==================================================
+// PARSER
+// ==================================================
+function handleRawData(chunk, TERMINAL_UUID) {
   buffer += chunk.toString("utf8");
   const lines = buffer.split(/\r?\n/);
   buffer = lines.pop();
@@ -132,33 +127,20 @@ function handleRawData(chunk, terminalUUID) {
 
     mainWindow?.webContents.send("scale-data", { weightKg });
 
-    const now = Date.now();
-    if (now - lastSent < SEND_INTERVAL) return;
-    lastSent = now;
-
     axios.post(`${SERVER_URL}/scale/weight`, {
       type: "scale",
-      terminal_uuid: terminalUUID,
+      terminal_uuid: TERMINAL_UUID,
       weight_kg: weightKg,
     }).catch(() => { });
   }
 }
 
-/* ==================================================
-   PRINTING (UNCHANGED)
-================================================== */
-function setupPrinting() {
-  ipcMain.handle("print-receipt-html", async () => ({ success: true }));
-}
-
-/* ==================================================
-   APP LIFECYCLE
-================================================== */
+// ==================================================
+// APP
+// ==================================================
 app.whenReady().then(initApp);
 
 app.on("window-all-closed", () => {
-  try {
-    scalePort?.close();
-  } catch { }
+  try { scalePort?.close(); } catch { }
   app.quit();
 });
