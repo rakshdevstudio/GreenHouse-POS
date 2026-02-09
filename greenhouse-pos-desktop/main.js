@@ -371,6 +371,11 @@ function setupOfflineHandlers() {
     };
   });
 
+  // Get configured API base URL (Backend URL)
+  ipcMain.handle('get-api-base', async () => {
+    return SERVER_URL;
+  });
+
   // Login with offline fallback
   ipcMain.handle('login', async (event, { username, password }) => {
     try {

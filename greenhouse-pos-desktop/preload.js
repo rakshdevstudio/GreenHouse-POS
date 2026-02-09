@@ -35,6 +35,14 @@ contextBridge.exposeInMainWorld("electron", {
   },
 
   /**
+   * Get configured backend URL
+   * Usage: window.electron.getApiBase()
+   */
+  getApiBase: () => {
+    return ipcRenderer.invoke('get-api-base');
+  },
+
+  /**
    * Login with offline fallback
    * Usage: window.electron.login({ username, password })
    */

@@ -24,7 +24,26 @@ if (rawBase && rawBase.trim() !== "") {
   }
 }
 
-export function getApiBase() {
+// Allow Electron to override API_BASE at runtime
+let electronApiBasePromise = null;
+if (typeof window !== "undefined" && window.electron && window.electron.getApiBase) {
+  electronApiBasePromise = window.electron.getApiBase().then((url) => {
+    if (url) {
+      console.log("🔌 Electron Backend URL detected:", url);
+      API_BASE = url; // Update global sync var (best effort)
+      return url;
+    }
+    return API_BASE;
+  }).catch(err => {
+    console.warn("Failed to get API base from Electron:", err);
+    return API_BASE;
+  });
+}
+
+export async function getApiBase() {
+  if (electronApiBasePromise) {
+    return await electronApiBasePromise;
+  }
   return API_BASE;
 }
 
@@ -72,7 +91,9 @@ async function call(path, opts = {}) {
     throw new Error('Offline mode - HTTP calls disabled');
   }
 
-  const url = `${API_BASE}${path}`;
+  // Resolve base URL (might come from Electron asynchronously)
+  const baseUrl = await getApiBase();
+  const url = `${baseUrl}${path}`;
   const headers = Object.assign({}, opts.headers || {});
 
   // JSON header if there is a body & no explicit content-type
