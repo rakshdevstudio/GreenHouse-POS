@@ -172,7 +172,7 @@ function setupPrinting(printerConfig) {
               @page { size: 80mm auto; margin: 0; }
               
               body {
-                width: 68mm; /* Reduced from 72mm to avoid right-edge clipping on some printers */
+                width: 64mm; /* Reduced from 72mm to avoid right-edge clipping on some printers */
                 margin: 0 auto;
                 padding: 2mm 0;
                 font-family: 'Courier New', Courier, monospace; /* Guaranteed thermal font */
