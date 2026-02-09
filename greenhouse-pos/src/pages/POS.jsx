@@ -907,6 +907,9 @@ export default function POS() {
       idempotency_key: "web-" + Date.now(),
       items,
       tax: Number(totals.backendTax.toFixed(2)),
+      // Enrich payload for offline mode
+      subtotal: Number(totals.subtotal.toFixed(2)),
+      total: Number(totals.total.toFixed(2)),
       payment_mode: "CASH",
     };
 
