@@ -32,6 +32,7 @@ function createWindow() {
     webPreferences: {
       preload: path.join(__dirname, "preload.js"),
       contextIsolation: true,
+      webSecurity: false, // 🔓 Disable CORS for API calls in Electron (crucial for fetch)
     },
   });
 

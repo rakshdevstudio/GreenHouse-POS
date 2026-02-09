@@ -465,6 +465,7 @@ async function getInvoices(params = {}) {
     // Deduplicate? (Offline created are distinct from online DB IDs usually)
     return [...offlineInvoices, ...(Array.isArray(onlineInvoices) ? onlineInvoices : [])];
   } catch (err) {
+    console.error("❌ getInvoices online fetch failed:", err);
     // If online call fails, at least return offline ones
     if (offlineInvoices.length > 0) return offlineInvoices;
     throw err;

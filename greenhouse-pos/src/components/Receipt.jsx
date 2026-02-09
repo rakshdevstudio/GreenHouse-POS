@@ -43,7 +43,7 @@ export default function Receipt({ invoice, store }) {
         : "";
 
     const items = invoice.items || [];
-    const storeName = store?.name || "Greenhouse";
+    const storeName = "GREENHOUSE"; // Hardcoded as per user request
     const addressLines = store?.address_lines || [];
 
     return (
