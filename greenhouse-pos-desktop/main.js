@@ -312,10 +312,12 @@ function setupPrinting(printerConfig) {
       `;
 
       win.webContents.once("did-finish-load", () => {
-        setTimeout(() => {
+        setTimeout(async () => {
           // FIX: Briefly show window to force Chromium to paint the content
           // Hidden windows sometimes have empty separate layers
           win.showInactive();
+
+          await win.webContents.executeJavaScript('document.body.offsetHeight');
 
           win.webContents.print(
             {
@@ -327,10 +329,7 @@ function setupPrinting(printerConfig) {
               pageSize: { width: 80000, height: 297000 },
               scaleFactor: 100,
             },
-            () => {
-              // Cleanup logic could go here, but win.close handling covers it mostly
-              win.close();
-            }
+            () => win.close()
           );
         }, 500);
       });
