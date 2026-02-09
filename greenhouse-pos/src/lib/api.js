@@ -372,9 +372,18 @@ async function createInvoice(payload) {
 
       // Handle offline response
       if (res.online === false) {
-        console.log('📴 Offline invoice created:', res.localId);
+        console.log('📴 Offline invoice created:', res.localId || res.invoice?.id);
 
-        // Normalize to match HTTP response shape
+        // If main.js returned a full invoice object, use it!
+        // This includes calculated totals that aren't in the payload
+        if (res.invoice) {
+          return {
+            invoice: res.invoice,
+            message: res.message || "Invoice saved locally",
+          };
+        }
+
+        // Fallback (legacy logic)
         return {
           invoice: {
             id: res.localId,
