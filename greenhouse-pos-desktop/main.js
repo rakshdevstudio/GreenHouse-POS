@@ -98,58 +98,7 @@ function initApp() {
   }
 }
 
-/* ==================================================
-   INIT APP
-================================================== */
-function initApp() {
-  /* ---------- SCALE CONFIG ---------- */
-  /* ---------- SCALE CONFIG ---------- */
-  const scaleConfig = loadConfig("scale-config.json", {
-    terminal_uuid: "",
-    scale_port: "COM1",
-    baud_rate: 9600,
-  });
 
-  const rawTerminal = String(scaleConfig.terminal_uuid || "").trim().toLowerCase();
-
-  if (!rawTerminal || !rawTerminal.includes("-")) {
-    console.error("❌ terminal_uuid missing or invalid in scale-config.json");
-    app.quit();
-    return;
-  }
-
-  const TERMINAL_UUID = rawTerminal;
-  const SCALE_PORT = scaleConfig.scale_port || "COM1";
-  const BAUD_RATE = Number(scaleConfig.baud_rate) || 9600;
-
-  console.log("🆔 SCALE TERMINAL UUID:", TERMINAL_UUID);
-
-  /* ---------- PRINTER CONFIG ---------- */
-  const printerConfig = loadConfig("printer-config.json", {
-    printer_name: "", // empty = system default
-    store: {
-      name: "Greenhouse Supermarket",
-      address_lines: [],
-    },
-  });
-
-  console.log("🏷 TERMINAL:", TERMINAL_UUID);
-  console.log("⚖ SCALE:", SCALE_PORT);
-  console.log(
-    "🖨 PRINTER:",
-    printerConfig.printer_name || "(System Default)"
-  );
-
-  try {
-    createWindow();
-  } catch (err) {
-    console.error("❌ Window creation failed", err);
-    throw err;
-  }
-
-  openScale(SCALE_PORT, BAUD_RATE, TERMINAL_UUID);
-  setupPrinting(printerConfig);
-}
 
 /* ==================================================
    SCALE (UNCHANGED, STABLE)
