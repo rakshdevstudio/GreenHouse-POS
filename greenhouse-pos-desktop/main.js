@@ -135,7 +135,133 @@ function setupPrinting(printerConfig) {
           <head>
             <style>
               @page { size: 80mm auto; margin: 0; }
-              body { width: 80mm; margin: 0; font-family: monospace; }
+              
+              body {
+                width: 80mm;
+                margin: 0;
+                padding: 3mm 2mm;
+                font-family: "Courier New", Courier, monospace;
+                font-size: 10px;
+                line-height: 1.4;
+                color: #000;
+                background: #fff;
+              }
+
+              /* Receipt container */
+              .receipt-preview {
+                width: 100%;
+                box-sizing: border-box;
+              }
+
+              /* Store header */
+              .receipt-store {
+                text-align: center;
+                margin-bottom: 4mm;
+              }
+
+              .receipt-store-name {
+                font-size: 14px;
+                font-weight: bold;
+                margin-bottom: 2mm;
+                text-transform: uppercase;
+              }
+
+              .receipt-store-sub {
+                font-size: 9px;
+                margin: 1mm 0;
+              }
+
+              /* Divider */
+              .receipt-divider {
+                border-top: 1px dashed #000;
+                margin: 3mm 0;
+                width: 100%;
+              }
+
+              /* Items section */
+              .receipt-items {
+                width: 100%;
+                margin: 2mm 0;
+              }
+
+              .receipt-items-header {
+                display: flex;
+                justify-content: space-between;
+                font-weight: bold;
+                font-size: 9px;
+                margin-bottom: 2mm;
+                padding-bottom: 1mm;
+                border-bottom: 1px solid #000;
+              }
+
+              .receipt-item-row {
+                display: flex;
+                justify-content: space-between;
+                margin: 1.5mm 0;
+                font-size: 9px;
+              }
+
+              /* Column widths */
+              .r-col-name {
+                flex: 0 0 35%;
+                overflow: hidden;
+                text-overflow: ellipsis;
+                white-space: nowrap;
+                text-align: left;
+              }
+
+              .r-col-qty {
+                flex: 0 0 20%;
+                text-align: right;
+                padding-right: 2mm;
+              }
+
+              .r-col-rate {
+                flex: 0 0 22%;
+                text-align: right;
+                padding-right: 2mm;
+              }
+
+              .r-col-amt {
+                flex: 0 0 23%;
+                text-align: right;
+                font-weight: bold;
+              }
+
+              /* Totals */
+              .receipt-totals {
+                margin-top: 3mm;
+                padding-top: 2mm;
+                border-top: 1px solid #000;
+              }
+
+              .receipt-total-row {
+                display: flex;
+                justify-content: space-between;
+                margin: 1.5mm 0;
+                font-size: 10px;
+              }
+
+              .receipt-total-row-strong {
+                font-weight: bold;
+                font-size: 12px;
+                margin-top: 2mm;
+                padding-top: 2mm;
+                border-top: 1px dashed #000;
+              }
+
+              /* Footer */
+              .receipt-footer {
+                margin-top: 4mm;
+                text-align: center;
+                font-size: 9px;
+              }
+
+              .receipt-footer-sub {
+                font-size: 8px;
+                font-style: italic;
+                margin-top: 1mm;
+              }
             </style>
           </head>
           <body>${receiptHtml}</body>
