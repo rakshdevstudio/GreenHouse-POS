@@ -666,6 +666,8 @@ async function dbInfo() {
 
 const api = {
   call,
+  setOfflineMode, // ✅ Added
+  isOfflineMode,  // ✅ Added
   // auth
   loginStore,
   loginAdmin,
