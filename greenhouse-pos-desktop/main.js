@@ -203,7 +203,11 @@ function setupPrinting(printerConfig) {
 
     const printWindow = new BrowserWindow({
       show: false,
-      webPreferences: { sandbox: false },
+      webPreferences: {
+        sandbox: false,
+        // CRITICAL: Disable offscreen rendering which breaks thermal printers
+        offscreen: false
+      },
     });
 
     const wrappedHtml = `
@@ -211,6 +215,11 @@ function setupPrinting(printerConfig) {
         <head>
           <meta charset="utf-8" />
           <style>
+            /* CRITICAL: @page must match physical paper */
+            @page {
+              size: 80mm auto;
+              margin: 0;
+            }
             body {
               font-family: monospace;
               margin: 0;
@@ -229,30 +238,56 @@ function setupPrinting(printerConfig) {
     );
 
     printWindow.webContents.on("did-finish-load", () => {
-      printWindow.webContents.print(
-        {
-          silent: true,
-          printBackground: true,
-          deviceName: printerConfig.printer_name || undefined,
+      console.log("🖨 Print window loaded, waiting for render...");
 
-          margins: {
-            marginType: "none",
-          },
+      // CRITICAL FIX #1: Wait for Chromium to fully render before printing
+      // Thermal printers reject blank/incomplete pages
+      setTimeout(() => {
+        printWindow.webContents.print(
+          {
+            silent: true,
+            printBackground: true,
 
-          pageSize: {
-            width: 80000,   // 80mm in microns (CRITICAL)
-            height: 200000, // large height so receipt doesn’t clip
+            // CRITICAL FIX #2: Explicit printer name (empty string = system default)
+            deviceName: printerConfig.printer_name || "",
+
+            // CRITICAL FIX #3: Thermal printers are monochrome ONLY
+            color: false,
+
+            // CRITICAL FIX #4: Force portrait (some drivers default to landscape)
+            landscape: false,
+
+            // CRITICAL FIX #5: Zero margins (thermal printers have fixed margins)
+            margins: {
+              marginType: "none",
+            },
+
+            // CRITICAL FIX #6: Correct page size in microns
+            // 80mm width is standard, but height must be reasonable
+            pageSize: {
+              width: 80000,   // 80mm in microns
+              height: 297000  // ~297mm (A4 height) - safe upper bound
+            },
+
+            // CRITICAL FIX #7: Disable scaling (must be 100%)
+            scaleFactor: 100,
+
+            // CRITICAL FIX #8: Single page per job
+            pageRanges: [{
+              from: 0,
+              to: 0
+            }]
           },
-        },
-        (success, errorType) => {
-          if (!success) {
-            console.error("❌ PRINT FAILED:", errorType);
-          } else {
-            console.log("✅ PRINT SENT TO WINDOWS SPOOLER");
+          (success, errorType) => {
+            if (!success) {
+              console.error("❌ PRINT FAILED:", errorType);
+            } else {
+              console.log("✅ PRINT SENT TO WINDOWS SPOOLER");
+            }
+            printWindow.close();
           }
-          printWindow.close();
-        }
-      );
+        );
+      }, 500); // 500ms render delay - CRITICAL for thermal printers
     });
   });
 }
