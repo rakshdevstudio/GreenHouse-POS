@@ -232,12 +232,8 @@ function setupPrinting(printerConfig) {
       </html>
     `;
 
-    await printWindow.loadURL(
-      "data:text/html;charset=utf-8," +
-      encodeURIComponent(wrappedHtml)
-    );
-
-    printWindow.webContents.on("did-finish-load", () => {
+    // CRITICAL FIX #0: Register event handler BEFORE loadURL to prevent race condition
+    const executePrint = () => {
       console.log("🖨 Print window loaded, waiting for render...");
 
       // CRITICAL FIX #1: Wait for Chromium to fully render before printing
@@ -288,7 +284,16 @@ function setupPrinting(printerConfig) {
           }
         );
       }, 500); // 500ms render delay - CRITICAL for thermal printers
-    });
+    };
+
+    // Register BOTH events for maximum compatibility
+    printWindow.webContents.on("did-finish-load", executePrint);
+    printWindow.once("ready-to-show", executePrint);
+
+    await printWindow.loadURL(
+      "data:text/html;charset=utf-8," +
+      encodeURIComponent(wrappedHtml)
+    );
   });
 }
 
