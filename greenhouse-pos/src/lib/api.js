@@ -368,7 +368,9 @@ async function createInvoice(payload) {
   // 1. ELECTRON IPC PATH (Strict)
   if (isElectron()) {
     try {
-      const res = await window.electron.createInvoice(payload);
+      // Pass the frontend's auth token to ensure Electron uses the active session
+      const token = localStorage.getItem("STORE_TOKEN");
+      const res = await window.electron.createInvoice({ ...payload, token });
 
       // Handle offline response
       if (res.online === false) {

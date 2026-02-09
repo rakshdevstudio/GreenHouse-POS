@@ -461,16 +461,19 @@ function setupOfflineHandlers() {
     try {
       if (network.isOnline()) {
         // ONLINE: Send to backend immediately
+        const { token, ...payload } = invoiceData;
+        const authToken = token || session.getSession()?.authToken || '';
+
         const response = await axios.post(
           `${SERVER_URL}/invoices`,
           {
-            ...invoiceData,
+            ...payload,
             terminal_uuid: terminalConfig.terminal_uuid,
           },
           {
             timeout: 10000,
             headers: {
-              'Authorization': `Bearer ${session.getSession()?.authToken || ''}`,
+              'Authorization': `Bearer ${authToken}`,
             }
           }
         );
