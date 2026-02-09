@@ -911,6 +911,11 @@ export default function POS() {
       subtotal: Number(totals.subtotal.toFixed(2)),
       total: Number(totals.total.toFixed(2)),
       payment_mode: "CASH",
+      // Breakdown for sync/reporting
+      gst_amount: Number(totals.gstAmount.toFixed(2)),
+      discount_amount: Number(totals.discountAmount.toFixed(2)),
+      gst_percent: totals.gstPercent,
+      discount_percent: totals.discountPercent,
     };
 
     console.log("checkout payload", payload);
