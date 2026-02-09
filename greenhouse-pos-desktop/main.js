@@ -156,7 +156,7 @@ function setupPrinting(printerConfig) {
               @page { size: 80mm auto; margin: 0; }
               
               body {
-                width: 72mm; /* Safe width for 80mm paper (usually ~72mm printable) */
+                width: 68mm; /* Reduced from 72mm to avoid right-edge clipping on some printers */
                 margin: 0 auto;
                 padding: 2mm 0;
                 font-family: Arial, Helvetica, sans-serif; /* Thicker than Courier */
