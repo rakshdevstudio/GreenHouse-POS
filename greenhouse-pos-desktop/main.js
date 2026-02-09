@@ -381,19 +381,37 @@ function setupOfflineHandlers() {
         );
 
         // Cache session for offline use
+        // ---- FIX: normalize backend response ----
+        const userId =
+          response.data.user?.id ||
+          response.data.user_id;
+
+        const storeId =
+          response.data.store?.id ||
+          response.data.store_id;
+
+        if (!userId || !storeId) {
+          throw new Error("Invalid login response from server");
+        }
+
+        // Cache session correctly
         session.saveSession({
-          userId: response.data.user.id,
-          storeId: response.data.user.store_id,
+          userId,
+          storeId,
           terminal_uuid: terminalConfig.terminal_uuid,
           authToken: response.data.token,
-          username: username,
+          username,
           storeName: response.data.store?.name || 'Greenhouse',
         });
 
+        // Return structure frontend already understands
         return {
           success: true,
           online: true,
-          ...response.data,
+          token: response.data.token,
+          store: response.data.store || { id: storeId },
+          store_id: storeId,
+          user_id: userId,
         };
       } else {
         // OFFLINE: Use cached session
