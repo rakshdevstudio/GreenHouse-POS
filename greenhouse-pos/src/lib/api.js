@@ -414,6 +414,38 @@ async function createInvoice(payload) {
 
 // List invoices (for history / admin) -> GET /invoices
 async function getInvoices(params = {}) {
+  let offlineInvoices = [];
+
+  // PHASE 3: Fetch offline pending invoices from Electron storage
+  if (isElectron()) {
+    try {
+      const pendingCallback = window.electron.getOfflineInvoices;
+      if (pendingCallback) {
+        const raw = await pendingCallback();
+        // Map to UI schema
+        offlineInvoices = raw.map((inv) => ({
+          id: inv.localId,
+          invoice_no: `OFFLINE (${inv.localId.split('-').pop()})`, // Shorten for display
+          created_at: inv.createdAt,
+          total: inv.invoice.total,
+          items: inv.invoice.items || [],
+          payment_mode: inv.invoice.payment_mode || 'CASH',
+          status: 'offline', // Special status for UI
+          item_count: (inv.invoice.items || []).length,
+          offline: true,
+        }));
+      }
+    } catch (err) {
+      console.warn('Failed to fetch offline invoices:', err);
+    }
+  }
+
+  // If strictly offline mode, return only local data
+  if (isElectron() && isOfflineMode()) {
+    return offlineInvoices.sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
+  }
+
+  // Online fetch
   const query = new URLSearchParams();
   if (params.store_id != null) query.set("store_id", String(params.store_id));
   if (params.date) query.set("date", params.date);
@@ -423,7 +455,18 @@ async function getInvoices(params = {}) {
 
   const qs = query.toString();
   const path = qs ? `/invoices?${qs}` : "/invoices";
-  return call(path);
+
+  try {
+    const onlineInvoices = await call(path);
+
+    // Merge: Offline on top (pending), followed by online
+    // Deduplicate? (Offline created are distinct from online DB IDs usually)
+    return [...offlineInvoices, ...(Array.isArray(onlineInvoices) ? onlineInvoices : [])];
+  } catch (err) {
+    // If online call fails, at least return offline ones
+    if (offlineInvoices.length > 0) return offlineInvoices;
+    throw err;
+  }
 }
 
 /* ------------------------------------------------------------------ */

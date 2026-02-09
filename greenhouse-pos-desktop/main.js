@@ -535,6 +535,12 @@ function setupOfflineHandlers() {
     }
   });
 
+  // Get offline invoices for history
+  ipcMain.handle('get-offline-invoices', async () => {
+    // Return pending invoices for this terminal
+    return storage.getPendingInvoices(terminalConfig.terminal_uuid);
+  });
+
   // Manual sync trigger
   ipcMain.handle('force-sync', async () => {
     if (!network.isOnline()) {

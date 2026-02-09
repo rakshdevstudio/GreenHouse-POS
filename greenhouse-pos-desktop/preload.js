@@ -51,6 +51,14 @@ contextBridge.exposeInMainWorld("electron", {
   },
 
   /**
+   * Get pending offline invoices
+   * Usage: window.electron.getOfflineInvoices()
+   */
+  getOfflineInvoices: () => {
+    return ipcRenderer.invoke('get-offline-invoices');
+  },
+
+  /**
    * Force sync pending invoices
    * Usage: window.electron.forceSync()
    */
