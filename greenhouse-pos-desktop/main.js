@@ -336,7 +336,7 @@ function initOfflineMode(terminalUuid) {
 
     // 4. Sync manager
     sync = syncModule.create(network, storage);
-    sync.init(SERVER_URL);
+    sync.init(SERVER_URL, session);
 
     // 5. Network event handlers
     network.onOnline(() => {

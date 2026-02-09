@@ -21,9 +21,11 @@ class SyncManager {
     /**
      * Initialize sync manager
      * @param {string} serverUrl - Backend API URL
+     * @param {Object} sessionManager - Session manager for auth token
      */
-    init(serverUrl) {
+    init(serverUrl, sessionManager) {
         this.serverUrl = serverUrl;
+        this.session = sessionManager;
 
         console.log('🔄 Sync Manager: Initializing...');
 
@@ -120,7 +122,7 @@ class SyncManager {
             // POST invoice to server
             // TODO: Replace with actual endpoint and payload structure
             const response = await axios.post(
-                `${this.serverUrl}/invoices/create`,
+                `${this.serverUrl}/invoices`,
                 {
                     ...invoice,
                     terminal_uuid: terminalUuid,
@@ -131,8 +133,7 @@ class SyncManager {
                     timeout: 10000, // 10 second timeout
                     headers: {
                         'Content-Type': 'application/json',
-                        // TODO: Add auth token from session
-                        // 'Authorization': `Bearer ${authToken}`
+                        'Authorization': `Bearer ${this.session?.getSession()?.authToken || ''}`
                     }
                 }
             );
