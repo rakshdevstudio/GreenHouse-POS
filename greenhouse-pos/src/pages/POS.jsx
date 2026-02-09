@@ -885,6 +885,10 @@ export default function POS() {
       items.push({
         product_id: numericId,
         qty: effectiveQty,
+        // Enrich payload for offline mode playback
+        name: row.product.name,
+        rate: price,
+        amount: Number((price * effectiveQty).toFixed(2))
       });
     }
 
