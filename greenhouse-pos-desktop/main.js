@@ -80,7 +80,7 @@ function initApp() {
   }
 
   const TERMINAL_UUID = config.terminal_uuid?.trim().toLowerCase();
-  const SCALE_PORT = config.scale_port || "COM1";
+  const SCALE_PORT = config.scale_port || "";
   const BAUD_RATE = config.baud_rate || 9600;
 
   if (!TERMINAL_UUID) {
@@ -175,12 +175,14 @@ function setupPrinting(printerConfig) {
                 width: 68mm; /* Reduced from 72mm to avoid right-edge clipping on some printers */
                 margin: 0 auto;
                 padding: 2mm 0;
-                font-family: Arial, Helvetica, sans-serif; /* Thicker than Courier */
-                font-weight: bold; /* Make text darker/bolder */
+                font-family: 'Courier New', Courier, monospace; /* Guaranteed thermal font */
+                font-weight: bold;
                 font-size: 11px;
                 line-height: 1.3;
                 color: #000;
                 background: #fff;
+                -webkit-print-color-adjust: exact; /* Force rendering */
+                print-color-adjust: exact;
               }
 
               /* Receipt container */
@@ -325,10 +327,11 @@ function setupPrinting(printerConfig) {
       });
 
       // FIX: Write to temp file to avoid data-uri limits/encoding issues
+      // EXPLANATION: Hidden windows with data-uris often skip paint. Temp file ensures rasterization.
       const tempPath = path.join(os.tmpdir(), `receipt-${Date.now()}.html`);
       fs.writeFileSync(tempPath, wrappedHtml, 'utf8');
 
-      console.log('🖨 Printing via temp file:', tempPath);
+      console.log('🖨 Printing via temp file (Paint Enforced):', tempPath);
       await win.loadFile(tempPath);
 
       return { success: true };
