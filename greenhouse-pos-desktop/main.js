@@ -382,29 +382,37 @@ function setupOfflineHandlers() {
 
         // Cache session for offline use
         // ---- FIX: normalize backend response ----
+        console.log('Login Response Data:', JSON.stringify(response.data));
+
         const userId =
           response.data.user?.id ||
-          response.data.user_id;
+          response.data.user_id ||
+          response.data.id; // Fallback for some flattened responses
 
         const storeId =
           response.data.store?.id ||
-          response.data.store_id;
+          response.data.store_id ||
+          (response.data.user ? response.data.user.store_id : null);
 
         if (!userId || !storeId) {
-          throw new Error("Invalid login response from server");
+          console.warn("⚠️ Warning: Incomplete login response from server. Proceeding with best effort.");
+          console.warn("Got:", { userId, storeId });
         }
 
-        // Cache session correctly
-        session.saveSession({
-          userId,
-          storeId,
-          terminal_uuid: terminalConfig.terminal_uuid,
-          authToken: response.data.token,
-          username,
-          storeName: response.data.store?.name || 'Greenhouse',
-        });
+        // Cache session correctly (best effort)
+        if (userId && storeId) {
+          session.saveSession({
+            userId,
+            storeId,
+            terminal_uuid: terminalConfig.terminal_uuid,
+            authToken: response.data.token,
+            username,
+            storeName: response.data.store?.name || 'Greenhouse',
+          });
+        }
 
         // Return structure frontend already understands
+        // Frontend mostly cares about token and store_id
         return {
           success: true,
           online: true,
@@ -412,6 +420,7 @@ function setupOfflineHandlers() {
           store: response.data.store || { id: storeId },
           store_id: storeId,
           user_id: userId,
+          user: response.data.user || { id: userId, username }, // Ensure user object exists
         };
       } else {
         // OFFLINE: Use cached session
