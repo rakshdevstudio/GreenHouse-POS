@@ -51,16 +51,36 @@ function createWindow() {
    SAFE CONFIG LOADER (USERDATA ONLY)
 ================================================== */
 function loadConfig(filename, defaults) {
-  const configDir = app.getPath("userData"); // ✅ SAFE
-  const filePath = path.join(configDir, filename);
+  const programFilesDir = path.join(
+    process.env.ProgramFiles || "C:\\Program Files",
+    "Greenhouse POS"
+  );
+
+  const programFilesPath = path.join(programFilesDir, filename);
+
+  const userDataDir = app.getPath("userData");
+  const userDataPath = path.join(userDataDir, filename);
 
   try {
-    if (!fs.existsSync(filePath)) {
-      fs.mkdirSync(configDir, { recursive: true });
-      fs.writeFileSync(filePath, JSON.stringify(defaults, null, 2), "utf8");
-      console.log(`🆕 Created ${filename} at ${filePath}`);
+    // ✅ 1. Prefer Program Files config
+    if (fs.existsSync(programFilesPath)) {
+      console.log(`📂 Loaded ${filename} from Program Files`);
+      return JSON.parse(fs.readFileSync(programFilesPath, "utf8"));
     }
-    return JSON.parse(fs.readFileSync(filePath, "utf8"));
+
+    // ✅ 2. Fallback to AppData
+    if (!fs.existsSync(userDataPath)) {
+      fs.mkdirSync(userDataDir, { recursive: true });
+      fs.writeFileSync(
+        userDataPath,
+        JSON.stringify(defaults, null, 2),
+        "utf8"
+      );
+      console.log(`🆕 Created ${filename} in AppData`);
+    }
+
+    console.log(`📂 Loaded ${filename} from AppData`);
+    return JSON.parse(fs.readFileSync(userDataPath, "utf8"));
   } catch (err) {
     console.error(`❌ Failed to load ${filename}`, err);
     return defaults;
