@@ -73,22 +73,27 @@ function loadConfig(filename, defaults) {
 function initApp() {
   /* ---------- SCALE CONFIG ---------- */
   const scaleConfig = loadConfig("scale-config.json", {
-    terminal_uuid: "s1-c1",
+    store_id: "s1",
+    counter_id: "c1",
     scale_port: "COM1",
     baud_rate: 9600,
   });
 
-  const TERMINAL_UUID = String(scaleConfig.terminal_uuid || "")
-    .trim()
-    .toLowerCase();
-  const SCALE_PORT = scaleConfig.scale_port || "COM1";
-  const BAUD_RATE = scaleConfig.baud_rate || 9600;
+  // Derive terminal UUID from store_id + counter_id
+  const storeId = String(scaleConfig.store_id || "").trim().toLowerCase();
+  const counterId = String(scaleConfig.counter_id || "").trim().toLowerCase();
 
-  if (!TERMINAL_UUID) {
-    console.error("❌ terminal_uuid missing");
+  if (!storeId || !counterId) {
+    console.error("❌ store_id and counter_id are required in scale-config.json");
     app.quit();
     return;
   }
+
+  const TERMINAL_UUID = `${storeId}-${counterId}`;
+  const SCALE_PORT = scaleConfig.scale_port || "COM1";
+  const BAUD_RATE = scaleConfig.baud_rate || 9600;
+
+  console.log("🆔 SCALE TERMINAL UUID:", TERMINAL_UUID);
 
   /* ---------- PRINTER CONFIG ---------- */
   const printerConfig = loadConfig("printer-config.json", {
