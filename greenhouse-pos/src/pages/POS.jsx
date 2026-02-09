@@ -882,6 +882,8 @@ export default function POS() {
         effectiveQty = Number(q.toFixed(3));
       }
 
+      const price = Number(row.product.price || row.product.rate || 0);
+
       items.push({
         product_id: numericId,
         qty: effectiveQty,
