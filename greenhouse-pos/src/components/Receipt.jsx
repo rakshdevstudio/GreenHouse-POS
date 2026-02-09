@@ -37,9 +37,9 @@ export default function Receipt({ invoice, store }) {
         dt = null;
     }
 
-    const dateStr = dt ? dt.toLocaleDateString("en-IN") : "";
+    const dateStr = dt ? dt.toLocaleDateString("en-IN", { timeZone: "Asia/Kolkata", day: "2-digit", month: "2-digit", year: "numeric" }) : "";
     const timeStr = dt
-        ? dt.toLocaleTimeString("en-IN", { hour12: false })
+        ? dt.toLocaleTimeString("en-IN", { timeZone: "Asia/Kolkata", hour: "2-digit", minute: "2-digit", hour12: true })
         : "";
 
     const items = invoice.items || [];
