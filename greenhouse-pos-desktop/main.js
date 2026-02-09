@@ -335,13 +335,13 @@ function setupPrinting(printerConfig) {
         }, 500);
       });
 
-      // FIX: Write to temp file to avoid data-uri limits/encoding issues
-      // EXPLANATION: Hidden windows with data-uris often skip paint. Temp file ensures rasterization.
-      const tempPath = path.join(os.tmpdir(), `receipt-${Date.now()}.html`);
-      fs.writeFileSync(tempPath, wrappedHtml, 'utf8');
-
-      console.log('🖨 Printing via temp file (Paint Enforced):', tempPath);
-      await win.loadFile(tempPath);
+      // FIX: Reverting to data-uri logic as temp file was failing
+      // BUT keeping the 'force paint' logic (showInactive)
+      console.log('🖨 Printing via data-uri (Paint Enforced)');
+      await win.loadURL(
+        "data:text/html;charset=utf-8," +
+        encodeURIComponent(wrappedHtml)
+      );
 
       return { success: true };
     } catch (err) {
