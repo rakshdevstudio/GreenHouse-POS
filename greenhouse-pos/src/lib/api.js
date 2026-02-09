@@ -29,6 +29,15 @@ export function getApiBase() {
 }
 
 /* ------------------------------------------------------------------ */
+/*  PHASE 3: Electron Environment Detection                           */
+/* ------------------------------------------------------------------ */
+
+// Detect if running in Electron (has window.electron from preload.js)
+const isElectron = () => {
+  return typeof window !== 'undefined' && window.electron;
+};
+
+/* ------------------------------------------------------------------ */
 /*  Low-level fetch wrapper                                           */
 /* ------------------------------------------------------------------ */
 // Request dedupe + short in-memory GET cache to avoid rapid identical fetch storms
@@ -130,7 +139,7 @@ async function call(path, opts = {}) {
   if (isGet) {
     __INFLIGHT_REQS[dedupeKey] = p;
     p.finally(() => {
-      try { delete __INFLIGHT_REQS[dedupeKey]; } catch (e) {}
+      try { delete __INFLIGHT_REQS[dedupeKey]; } catch (e) { }
     });
   }
 
@@ -157,6 +166,33 @@ async function loginStore(arg1, arg2, arg3) {
     };
   }
 
+  // PHASE 3: Use Electron IPC if available (supports offline)
+  if (isElectron()) {
+    try {
+      const res = await window.electron.login({
+        username: body.username,
+        password: body.password,
+      });
+
+      // Store tokens (compatible with backend response)
+      if (res && res.token) {
+        localStorage.setItem("STORE_TOKEN", res.token);
+      }
+      if (res && res.store?.id != null) {
+        localStorage.setItem("STORE_ID", String(res.store.id));
+      } else if (res && res.store_id != null) {
+        localStorage.setItem("STORE_ID", String(res.store_id));
+      }
+
+      console.log(res.online ? '🟢 Online login via IPC' : '📴 Offline login via cached session');
+      return res;
+    } catch (err) {
+      console.error('❌ Electron login failed:', err);
+      throw err;
+    }
+  }
+
+  // FALLBACK: HTTP for web browsers
   const res = await call("/auth/store-login", {
     method: "POST",
     body,
@@ -235,8 +271,8 @@ async function getProducts(params = {}) {
   const products = Array.isArray(res)
     ? res
     : Array.isArray(res.products)
-    ? res.products
-    : [];
+      ? res.products
+      : [];
   return products;
 }
 
@@ -288,6 +324,35 @@ async function deleteProduct(id) {
 
 // Create invoice (POS checkout) -> POST /invoices
 async function createInvoice(payload) {
+  // PHASE 3: Use Electron IPC if available (supports offline)
+  if (isElectron()) {
+    try {
+      const res = await window.electron.createInvoice(payload);
+
+      // Handle offline response
+      if (!res.online) {
+        console.log('📴 Offline invoice created:', res.localId);
+        // Return format compatible with existing code
+        return {
+          invoice: {
+            id: res.localId,
+            ...payload,
+            offline: true,
+          },
+          message: res.message,
+        };
+      }
+
+      // Online response
+      console.log('🟢 Online invoice created via IPC');
+      return res;
+    } catch (err) {
+      console.error('❌ Electron invoice creation failed:', err);
+      throw err;
+    }
+  }
+
+  // FALLBACK: HTTP for web browsers
   return call("/invoices", {
     method: "POST",
     body: payload,
