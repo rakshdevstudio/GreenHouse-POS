@@ -1,5 +1,6 @@
 // src/components/ReceiptPreview.jsx
 import React from "react";
+import Receipt from "./Receipt";
 
 /**
  * Props:
@@ -9,7 +10,8 @@ import React from "react";
  *     items: [{ name, qty, rate, amount }],
  *     subtotal,
  *     tax,
- *     total
+ *     total,
+ *     store: { name, address_lines }
  *   }
  */
 export default function ReceiptPreview({ invoice, lastInvoice }) {
@@ -37,21 +39,6 @@ export default function ReceiptPreview({ invoice, lastInvoice }) {
     );
   }
 
-  // Safely parse date
-  let dt = null;
-  try {
-    dt = new Date(inv.created_at);
-  } catch {
-    dt = null;
-  }
-
-  const dateStr = dt ? dt.toLocaleDateString("en-IN") : "";
-  const timeStr = dt
-    ? dt.toLocaleTimeString("en-IN", { hour12: false })
-    : "";
-
-  const items = inv.items || [];
-
   const handlePrint = () => {
     // Simple: trigger browser print. Our global @media print CSS
     // will hide the rest of the POS UI and keep only the receipt.
@@ -71,81 +58,8 @@ export default function ReceiptPreview({ invoice, lastInvoice }) {
         </button>
       </div>
 
-      {/* This is exactly what we clone into the print window */}
-      <div id="receipt-print-area" className="receipt-preview">
-        <div className="receipt-store">
-          <div className="receipt-store-name">Green House</div>
-          <div className="receipt-store-sub">
-            Invoice: {inv.invoice_no || "-"}
-          </div>
-          <div className="receipt-store-sub">
-            {dateStr} {timeStr && `, ${timeStr}`}
-          </div>
-        </div>
-
-        <div className="receipt-divider" />
-
-        <div className="receipt-items">
-          <div className="receipt-items-header">
-            <div>Item</div>
-            <div className="r-col-qty">Qty</div>
-            <div className="r-col-rate">Rate</div>
-            <div className="r-col-amt">Amount</div>
-          </div>
-
-          {items.length === 0 ? (
-            <div className="receipt-empty-items">
-              No items on this invoice.
-            </div>
-          ) : (
-            items.map((it) => (
-              <div
-                key={it.id || it.product_id || it.name}
-                className="receipt-item-row"
-              >
-                <div className="r-col-name">{it.name}</div>
-                <div className="r-col-qty">
-                  {Number(it.qty).toFixed(3)}
-                </div>
-                <div className="r-col-rate">
-                  ₹{Number(it.rate).toFixed(2)}
-                </div>
-                <div className="r-col-amt">
-                  ₹{Number(it.amount).toFixed(2)}
-                </div>
-              </div>
-            ))
-          )}
-        </div>
-
-        <div className="receipt-divider" />
-
-        <div className="receipt-totals">
-          <div className="receipt-total-row">
-            <span>Subtotal</span>
-            <span>
-              ₹{Number(inv.subtotal ?? inv.total ?? 0).toFixed(2)}
-            </span>
-          </div>
-          <div className="receipt-total-row">
-            <span>Tax / Adjustments</span>
-            <span>₹{Number(inv.tax ?? 0).toFixed(2)}</span>
-          </div>
-          <div className="receipt-total-row receipt-total-row-strong">
-            <span>Grand total</span>
-            <span>
-              ₹{Number(inv.total ?? inv.subtotal ?? 0).toFixed(2)}
-            </span>
-          </div>
-        </div>
-
-        <div className="receipt-footer">
-          <div>Thank you for shopping with us 🌿</div>
-          <div className="receipt-footer-sub">
-            Powered by your Greenhouse POS
-          </div>
-        </div>
-      </div>
+      {/* Use new Receipt component with store data from API */}
+      <Receipt invoice={inv} store={inv.store} />
     </div>
   );
 }

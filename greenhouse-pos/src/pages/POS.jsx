@@ -1,6 +1,7 @@
-x// src/pages/POS.jsx
+// src/pages/POS.jsx
 import React, { useEffect, useState, useMemo, useRef } from "react";
 import api, { getApiBase } from "../lib/api";
+import Receipt from "../components/Receipt";
 
 // Format invoice date/time consistently for receipt + screen
 function formatInvoiceDateTime(iso) {
@@ -1600,84 +1601,8 @@ export default function POS() {
                 </button>
               </div>
 
-              <div className="receipt-preview">
-                {/* Store + header */}
-                <div className="receipt-store">
-                  <div className="receipt-store-name">
-                    {lastInvoice.store?.name || "Green House"}
-                  </div>
-                  <div className="receipt-store-sub">
-                    Invoice: {lastInvoice.invoice_no || lastInvoice.id}
-                  </div>
-                  <div className="receipt-store-sub">
-                    Date: {formatInvoiceDateTime(lastInvoice.created_at)}
-                  </div>
-                </div>
-
-                <div className="receipt-divider" />
-
-                {/* Items table */}
-                <div className="receipt-items">
-                  <div className="receipt-items-header">
-                    <span className="r-col-name">Item</span>
-                    <span className="r-col-qty">Qty</span>
-                    <span className="r-col-rate">Rate</span>
-                    <span className="r-col-amt">Amount</span>
-                  </div>
-
-                  {(lastInvoice.items || []).map((item) => (
-                    <div key={item.id || item.product_id} className="receipt-item-row">
-                      <span className="r-col-name">{item.name}</span>
-                      <span className="r-col-qty">
-                        {Number(item.qty || 0).toFixed(3)}
-                      </span>
-                      <span className="r-col-rate">
-                        ₹{Number(item.rate || 0).toFixed(2)}
-                      </span>
-                      <span className="r-col-amt">
-                        ₹{Number(item.amount || 0).toFixed(2)}
-                      </span>
-                    </div>
-                  ))}
-
-                  {(lastInvoice.items || []).length === 0 && (
-                    <div className="receipt-empty-items">
-                      Items for this invoice are not loaded.
-                    </div>
-                  )}
-                </div>
-
-                <div className="receipt-divider" />
-
-                {/* Totals */}
-                <div className="receipt-totals">
-                  <div className="receipt-total-row">
-                    <span>Subtotal</span>
-                    <span>
-                      ₹
-                      {(
-                        Number(lastInvoice.total || 0) -
-                        Number(lastInvoice.tax || 0)
-                      ).toFixed(2)}
-                    </span>
-                  </div>
-                  <div className="receipt-total-row">
-                    <span>Tax / Adjustments</span>
-                    <span>₹{Number(lastInvoice.tax || 0).toFixed(2)}</span>
-                  </div>
-                  <div className="receipt-total-row receipt-total-row-strong">
-                    <span>Grand total</span>
-                    <span>₹{Number(lastInvoice.total || 0).toFixed(2)}</span>
-                  </div>
-                </div>
-
-                <div className="receipt-footer">
-                  <div>Thank you for shopping with us 🌿</div>
-                  <div className="receipt-footer-sub">
-                    Powered by your Greenhouse POS
-                  </div>
-                </div>
-              </div>
+              {/* Use Receipt component with store data from API */}
+              <Receipt invoice={lastInvoice} store={lastInvoice.store} />
             </div>
           )}
         </aside>
