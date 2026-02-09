@@ -4,11 +4,21 @@ const fs = require("fs");
 const { SerialPort } = require("serialport");
 const axios = require("axios");
 
+// PHASE 2: OFFLINE MODE MODULES
+const network = require('./offline/network');
+const storage = require('./offline/storage');
+const session = require('./offline/session');
+const syncModule = require('./offline/sync');
+
 let mainWindow;
 let scalePort;
 let buffer = "";
 let lastSent = 0;
 const SEND_INTERVAL = 200;
+
+// PHASE 2: OFFLINE MODE GLOBALS
+let sync; // Sync manager instance
+let terminalConfig; // Store config globally for IPC handlers
 
 const SERVER_URL = "https://greenhouse-pos-production.up.railway.app";
 
@@ -80,6 +90,15 @@ function initApp() {
   // Setup printing with config from same directory
   const printerConfig = loadPrinterConfig(exeDir);
   setupPrinting(printerConfig);
+
+  // PHASE 2: OFFLINE MODE WIRING
+  terminalConfig = {
+    terminal_uuid: TERMINAL_UUID,
+    exeDir: exeDir
+  };
+
+  initOfflineMode(TERMINAL_UUID);
+  setupOfflineHandlers();
 }
 
 // ==================================================
@@ -299,6 +318,181 @@ function setupPrinting(printerConfig) {
 }
 
 // ==================================================
+// PHASE 2: OFFLINE MODE INITIALIZATION
+// ==================================================
+function initOfflineMode(terminalUuid) {
+  console.log('🔄 Initializing offline mode...');
+
+  try {
+    // 1. Network detection
+    network.init();
+
+    // 2. Local storage
+    storage.init();
+
+    // 3. Session cache
+    session.init();
+
+    // 4. Sync manager
+    sync = syncModule.create(network, storage);
+    sync.init(SERVER_URL);
+
+    // 5. Network event handlers
+    network.onOnline(() => {
+      console.log('🟢 Network: ONLINE');
+      mainWindow?.webContents.send('network-status', { online: true });
+      sync.syncNow();
+    });
+
+    network.onOffline(() => {
+      console.log('🔴 Network: OFFLINE');
+      mainWindow?.webContents.send('network-status', { online: false });
+    });
+
+    console.log('✅ Offline mode initialized');
+  } catch (err) {
+    console.error('❌ Offline mode init failed:', err);
+    // Don't crash app if offline mode fails
+  }
+}
+
+// ==================================================
+// PHASE 2: OFFLINE MODE IPC HANDLERS
+// ==================================================
+function setupOfflineHandlers() {
+  // Network status query
+  ipcMain.handle('get-network-status', async () => {
+    return {
+      online: network.isOnline(),
+      sessionCached: session.isOfflineLoginAllowed(),
+      pendingInvoices: storage.getStats().pending,
+    };
+  });
+
+  // Login with offline fallback
+  ipcMain.handle('login', async (event, { username, password }) => {
+    try {
+      if (network.isOnline()) {
+        // ONLINE: Normal login to backend
+        const response = await axios.post(
+          `${SERVER_URL}/auth/login`,
+          { username, password },
+          { timeout: 10000 }
+        );
+
+        // Cache session for offline use
+        session.saveSession({
+          userId: response.data.user.id,
+          storeId: response.data.user.store_id,
+          terminal_uuid: terminalConfig.terminal_uuid,
+          authToken: response.data.token,
+          username: username,
+          storeName: response.data.store?.name || 'Greenhouse',
+        });
+
+        return {
+          success: true,
+          online: true,
+          ...response.data,
+        };
+      } else {
+        // OFFLINE: Use cached session
+        const cachedSession = session.validateOfflineLogin(username, password);
+
+        if (cachedSession) {
+          return {
+            success: true,
+            online: false,
+            user: {
+              id: cachedSession.userId,
+              username: cachedSession.username,
+            },
+            store: {
+              id: cachedSession.storeId,
+              name: cachedSession.storeName,
+            },
+            terminal_uuid: cachedSession.terminal_uuid,
+            token: cachedSession.authToken,
+          };
+        } else {
+          throw new Error('Offline login not available. Please connect to internet.');
+        }
+      }
+    } catch (err) {
+      console.error('❌ Login failed:', err);
+      throw err;
+    }
+  });
+
+  // Invoice creation with offline fallback
+  ipcMain.handle('create-invoice', async (event, invoiceData) => {
+    try {
+      if (network.isOnline()) {
+        // ONLINE: Send to backend immediately
+        const response = await axios.post(
+          `${SERVER_URL}/invoices/create`,
+          {
+            ...invoiceData,
+            terminal_uuid: terminalConfig.terminal_uuid,
+          },
+          {
+            timeout: 10000,
+            headers: {
+              'Authorization': `Bearer ${session.getSession()?.authToken || ''}`,
+            }
+          }
+        );
+
+        return {
+          success: true,
+          online: true,
+          invoice: response.data.invoice || response.data,
+        };
+      } else {
+        // OFFLINE: Save locally
+        const localId = storage.saveInvoice(invoiceData, terminalConfig.terminal_uuid);
+
+        return {
+          success: true,
+          online: false,
+          localId,
+          message: 'Invoice saved locally. Will sync when online.',
+        };
+      }
+    } catch (err) {
+      console.error('❌ Invoice creation failed:', err);
+
+      // Fallback to offline if online request fails
+      if (network.isOnline()) {
+        console.log('⚠️  Online request failed, falling back to offline mode');
+        const localId = storage.saveInvoice(invoiceData, terminalConfig.terminal_uuid);
+
+        return {
+          success: true,
+          online: false,
+          localId,
+          fallback: true,
+          message: 'Server error. Invoice saved locally.',
+        };
+      }
+
+      throw err;
+    }
+  });
+
+  // Manual sync trigger
+  ipcMain.handle('force-sync', async () => {
+    if (!network.isOnline()) {
+      throw new Error('Cannot sync while offline');
+    }
+    await sync.syncNow();
+    return { success: true };
+  });
+
+  console.log('✅ Offline IPC handlers registered');
+}
+
+// ==================================================
 // SCALE
 // ==================================================
 function openScale(SCALE_PORT, BAUD_RATE, TERMINAL_UUID) {
@@ -368,5 +562,12 @@ app.whenReady().then(initApp);
 
 app.on("window-all-closed", () => {
   try { scalePort?.close(); } catch { }
+
+  // PHASE 2: OFFLINE MODE CLEANUP
+  try {
+    network.destroy();
+    sync?.destroy();
+  } catch { }
+
   app.quit();
 });
