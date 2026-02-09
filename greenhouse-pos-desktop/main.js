@@ -64,6 +64,9 @@ function initApp() {
     // Ensure config directory exists
     fs.mkdirSync(configDir, { recursive: true });
 
+    console.log("📁 CONFIG DIR:", configDir);
+    console.log("📄 CONFIG PATH:", scaleConfigPath);
+
     // Ensure scale-config.json exists
     if (!fs.existsSync(scaleConfigPath)) {
       fs.writeFileSync(
@@ -71,16 +74,22 @@ function initApp() {
         JSON.stringify(DEFAULT_SCALE_CONFIG, null, 2),
         "utf8"
       );
-      console.log("🆕 Created scale-config.json");
+      console.log("🆕 Created scale-config.json at:", scaleConfigPath);
     }
 
-    const scaleConfig = JSON.parse(
-      fs.readFileSync(scaleConfigPath, "utf8")
-    );
+    const configFileContents = fs.readFileSync(scaleConfigPath, "utf8");
+    console.log("📖 RAW CONFIG FILE CONTENTS:");
+    console.log(configFileContents);
+
+    const scaleConfig = JSON.parse(configFileContents);
+    console.log("📦 PARSED CONFIG:", JSON.stringify(scaleConfig, null, 2));
 
     const TERMINAL_UUID = String(scaleConfig.terminal_uuid || "")
       .trim()
       .toLowerCase();
+
+    console.log("🔍 TERMINAL_UUID FROM CONFIG:", scaleConfig.terminal_uuid);
+    console.log("🔍 AFTER PROCESSING:", TERMINAL_UUID);
 
     if (!TERMINAL_UUID || !TERMINAL_UUID.includes("-")) {
       throw new Error("Invalid terminal_uuid in scale-config.json");
@@ -89,8 +98,8 @@ function initApp() {
     const SCALE_PORT = scaleConfig.scale_port || "COM1";
     const BAUD_RATE = Number(scaleConfig.baud_rate) || 9600;
 
-    console.log("🆔 SCALE TERMINAL UUID:", TERMINAL_UUID);
-    console.log("⚖ SCALE PORT:", SCALE_PORT);
+    console.log("✅ FINAL SCALE TERMINAL UUID:", TERMINAL_UUID);
+    console.log("✅ FINAL SCALE PORT:", SCALE_PORT);
 
     createWindow();
 
