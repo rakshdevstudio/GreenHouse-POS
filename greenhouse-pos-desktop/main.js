@@ -50,40 +50,51 @@ function createWindow() {
 /* ==================================================
    SAFE CONFIG LOADER (USERDATA ONLY)
 ================================================== */
-function loadConfig(filename, defaults) {
-  const programFilesDir = path.join(
-    process.env.ProgramFiles || "C:\\Program Files",
-    "Greenhouse POS"
-  );
+function initApp() {
+  const configDir = app.getPath("userData");
+  const configPath = path.join(configDir, "scale-config.json");
 
-  const programFilesPath = path.join(programFilesDir, filename);
-
-  const userDataDir = app.getPath("userData");
-  const userDataPath = path.join(userDataDir, filename);
+  const DEFAULT_CONFIG = {
+    terminal_uuid: "s1-c1",
+    scale_port: "COM1",
+    baud_rate: 9600
+  };
 
   try {
-    // ✅ 1. Prefer Program Files config
-    if (fs.existsSync(programFilesPath)) {
-      console.log(`📂 Loaded ${filename} from Program Files`);
-      return JSON.parse(fs.readFileSync(programFilesPath, "utf8"));
+    if (!fs.existsSync(configDir)) {
+      fs.mkdirSync(configDir, { recursive: true });
+      console.log("📁 Created config dir:", configDir);
     }
 
-    // ✅ 2. Fallback to AppData
-    if (!fs.existsSync(userDataPath)) {
-      fs.mkdirSync(userDataDir, { recursive: true });
+    if (!fs.existsSync(configPath)) {
       fs.writeFileSync(
-        userDataPath,
-        JSON.stringify(defaults, null, 2),
+        configPath,
+        JSON.stringify(DEFAULT_CONFIG, null, 2),
         "utf8"
       );
-      console.log(`🆕 Created ${filename} in AppData`);
+      console.log("🆕 Created scale-config.json");
     }
 
-    console.log(`📂 Loaded ${filename} from AppData`);
-    return JSON.parse(fs.readFileSync(userDataPath, "utf8"));
+    const config = JSON.parse(fs.readFileSync(configPath, "utf8"));
+
+    if (!config.terminal_uuid) {
+      throw new Error("terminal_uuid missing in scale-config.json");
+    }
+
+    console.log("📄 Loaded config from:", configPath);
+    console.log("🆔 SCALE TERMINAL UUID:", config.terminal_uuid);
+
+    createWindow();
+
+    openScale(
+      config.scale_port || "COM1",
+      Number(config.baud_rate) || 9600,
+      config.terminal_uuid.trim().toLowerCase()
+    );
+
   } catch (err) {
-    console.error(`❌ Failed to load ${filename}`, err);
-    return defaults;
+    console.error("❌ CONFIG LOAD FAILED:", err);
+    app.quit();
   }
 }
 
