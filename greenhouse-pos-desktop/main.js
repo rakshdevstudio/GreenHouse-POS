@@ -376,7 +376,11 @@ function setupOfflineHandlers() {
         // ONLINE: Normal login to backend
         const response = await axios.post(
           `${SERVER_URL}/auth/store-login`,
-          { username, password },
+          {
+            username,
+            password,
+            terminal_uuid: terminalConfig.terminal_uuid
+          },
           { timeout: 10000 }
         );
 
