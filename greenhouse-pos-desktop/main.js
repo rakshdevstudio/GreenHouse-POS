@@ -198,104 +198,145 @@ function setupPrinting(printerConfig) {
 
     if (!receiptHtml) {
       console.log("❌ No receipt HTML received");
-      return;
+      return { success: false, error: "No HTML provided" };
     }
 
-    const printWindow = new BrowserWindow({
-      show: false,
-      webPreferences: {
-        sandbox: false,
-        // CRITICAL: Disable offscreen rendering which breaks thermal printers
-        offscreen: false
-      },
-    });
+    let printWindow = null;
 
-    const wrappedHtml = `
-      <html>
-        <head>
-          <meta charset="utf-8" />
-          <style>
-            /* CRITICAL: @page must match physical paper */
-            @page {
-              size: 80mm auto;
-              margin: 0;
+    try {
+      printWindow = new BrowserWindow({
+        show: false,
+        webPreferences: {
+          sandbox: false,
+          // CRITICAL: Disable offscreen rendering which breaks thermal printers
+          offscreen: false
+        },
+      });
+
+      const wrappedHtml = `
+        <html>
+          <head>
+            <meta charset="utf-8" />
+            <style>
+              /* CRITICAL: @page must match physical paper */
+              @page {
+                size: 80mm auto;
+                margin: 0;
+              }
+              body {
+                font-family: monospace;
+                margin: 0;
+                padding: 0;
+                width: 80mm;
+              }
+            </style>
+          </head>
+          <body>${receiptHtml}</body>
+        </html>
+      `;
+
+      // CRITICAL FIX #0: Register event handler BEFORE loadURL to prevent race condition
+      const executePrint = () => {
+        console.log("🖨 Print window loaded, waiting for render...");
+
+        // CRITICAL FIX #1: Wait for Chromium to fully render before printing
+        // Thermal printers reject blank/incomplete pages
+        setTimeout(() => {
+          try {
+            printWindow.webContents.print(
+              {
+                silent: true,
+                printBackground: true,
+
+                // CRITICAL FIX #2: Explicit printer name (empty string = system default)
+                deviceName: printerConfig.printer_name || "",
+
+                // CRITICAL FIX #3: Thermal printers are monochrome ONLY
+                color: false,
+
+                // CRITICAL FIX #4: Force portrait (some drivers default to landscape)
+                landscape: false,
+
+                // CRITICAL FIX #5: Zero margins (thermal printers have fixed margins)
+                margins: {
+                  marginType: "none",
+                },
+
+                // CRITICAL FIX #6: Correct page size in microns
+                // 80mm width is standard, but height must be reasonable
+                pageSize: {
+                  width: 80000,   // 80mm in microns
+                  height: 297000  // ~297mm (A4 height) - safe upper bound
+                },
+
+                // CRITICAL FIX #7: Disable scaling (must be 100%)
+                scaleFactor: 100
+              },
+              (success, errorType) => {
+                try {
+                  if (!success) {
+                    console.error("❌ PRINT FAILED:", errorType);
+                  } else {
+                    console.log("✅ PRINT SENT TO WINDOWS SPOOLER");
+                  }
+                } catch (err) {
+                  console.error("❌ Print callback error:", err);
+                } finally {
+                  // Safe window cleanup
+                  try {
+                    if (printWindow && !printWindow.isDestroyed()) {
+                      printWindow.close();
+                    }
+                  } catch (err) {
+                    console.error("❌ Window cleanup error:", err);
+                  }
+                }
+              }
+            );
+          } catch (err) {
+            console.error("❌ Print execution error:", err);
+            // Safe window cleanup on error
+            try {
+              if (printWindow && !printWindow.isDestroyed()) {
+                printWindow.close();
+              }
+            } catch (cleanupErr) {
+              console.error("❌ Window cleanup error:", cleanupErr);
             }
-            body {
-              font-family: monospace;
-              margin: 0;
-              padding: 0;
-              width: 80mm;
-            }
-          </style>
-        </head>
-        <body>${receiptHtml}</body>
-      </html>
-    `;
-
-    // CRITICAL FIX #0: Register event handler BEFORE loadURL to prevent race condition
-    const executePrint = () => {
-      console.log("🖨 Print window loaded, waiting for render...");
-
-      // CRITICAL FIX #1: Wait for Chromium to fully render before printing
-      // Thermal printers reject blank/incomplete pages
-      setTimeout(() => {
-        printWindow.webContents.print(
-          {
-            silent: true,
-            printBackground: true,
-
-            // CRITICAL FIX #2: Explicit printer name (empty string = system default)
-            deviceName: printerConfig.printer_name || "",
-
-            // CRITICAL FIX #3: Thermal printers are monochrome ONLY
-            color: false,
-
-            // CRITICAL FIX #4: Force portrait (some drivers default to landscape)
-            landscape: false,
-
-            // CRITICAL FIX #5: Zero margins (thermal printers have fixed margins)
-            margins: {
-              marginType: "none",
-            },
-
-            // CRITICAL FIX #6: Correct page size in microns
-            // 80mm width is standard, but height must be reasonable
-            pageSize: {
-              width: 80000,   // 80mm in microns
-              height: 297000  // ~297mm (A4 height) - safe upper bound
-            },
-
-            // CRITICAL FIX #7: Disable scaling (must be 100%)
-            scaleFactor: 100
-          },
-          (success, errorType) => {
-            if (!success) {
-              console.error("❌ PRINT FAILED:", errorType);
-            } else {
-              console.log("✅ PRINT SENT TO WINDOWS SPOOLER");
-            }
-            printWindow.close();
           }
-        );
-      }, 500); // 500ms render delay - CRITICAL for thermal printers
-    };
+        }, 500); // 500ms render delay - CRITICAL for thermal printers
+      };
 
-    // CRITICAL: Use once() to prevent duplicate execution
-    // Both events may fire, but we only want to print once
-    let printed = false;
-    const safeExecutePrint = () => {
-      if (printed) return;
-      printed = true;
-      executePrint();
-    };
+      // CRITICAL: Use once() to prevent duplicate execution
+      // Both events may fire, but we only want to print once
+      let printed = false;
+      const safeExecutePrint = () => {
+        if (printed) return;
+        printed = true;
+        executePrint();
+      };
 
-    printWindow.webContents.once("did-finish-load", safeExecutePrint);
-    printWindow.once("ready-to-show", safeExecutePrint);
+      printWindow.webContents.once("did-finish-load", safeExecutePrint);
+      printWindow.once("ready-to-show", safeExecutePrint);
 
-    await printWindow.loadURL(
-      "data:text/html;charset=utf-8," +
-      encodeURIComponent(wrappedHtml)
-    );
+      await printWindow.loadURL(
+        "data:text/html;charset=utf-8," +
+        encodeURIComponent(wrappedHtml)
+      );
+
+      return { success: true };
+    } catch (err) {
+      console.error("❌ CRITICAL PRINT ERROR:", err);
+      // Emergency cleanup
+      try {
+        if (printWindow && !printWindow.isDestroyed()) {
+          printWindow.close();
+        }
+      } catch (cleanupErr) {
+        console.error("❌ Emergency cleanup error:", cleanupErr);
+      }
+      return { success: false, error: err.message };
+    }
   });
 }
 
