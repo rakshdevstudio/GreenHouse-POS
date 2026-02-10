@@ -176,18 +176,19 @@ function setupPrinting(printerConfig) {
             <style>
               @page { size: 80mm auto; margin: 0; }
               
+              /* FORCE MONOSPACE & PRINT ADJUST */
               body {
-                width: 64mm; /* Reduced from 72mm to avoid right-edge clipping on some printers */
+                width: 64mm;
                 margin: 0 auto;
                 padding: 2mm 0;
-                font-family: 'Courier New', Courier, monospace; /* Guaranteed thermal font */
+                font-family: monospace !important;
                 font-weight: bold;
                 font-size: 11px;
                 line-height: 1.3;
                 color: #000;
                 background: #fff;
-                -webkit-print-color-adjust: exact; /* Force rendering */
-                print-color-adjust: exact;
+                -webkit-print-color-adjust: exact !important;
+                print-color-adjust: exact !important;
               }
 
               /* Receipt container */
@@ -323,11 +324,13 @@ function setupPrinting(printerConfig) {
             {
               silent: true,
               deviceName: printerConfig.printer_name || undefined,
-              color: false,
+              printBackground: true, // 🔴 REQUIRED for some thermal printers to print text layers
+              color: true, // 🔥 CHANGED: Use color mode to ensure black text renders properly
               landscape: false,
               margins: { marginType: "none" },
-              pageSize: { width: 80000, height: 3000000 }, // 3 meters height (effectively continuous)
+              pageSize: { width: 80000, height: 3000000 }, // Keep continuous roll length
               scaleFactor: 100,
+              dpi: { horizontal: 203, vertical: 203 }, // 🔴 THERMAL DPI (Standard)
             },
             () => win.close()
           );

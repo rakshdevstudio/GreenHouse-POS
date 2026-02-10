@@ -1402,15 +1402,19 @@ button {
     print-color-adjust: exact;
   }
 
-  /* Hide EVERYTHING by default */
-  body * {
+  /* Hide everything except receipt */
+  body > *:not(.receipt-preview) {
     display: none !important;
   }
 
   /* Show ONLY the receipt preview */
-  .receipt-preview,
-  .receipt-preview * {
+  .receipt-preview {
     display: block !important;
+    visibility: visible !important;
+  }
+
+  .receipt-preview * {
+    display: revert !important;
     visibility: visible !important;
   }
 
