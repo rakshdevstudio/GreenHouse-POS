@@ -173,101 +173,131 @@ function setupPrinting(printerConfig) {
       const wrappedHtml = `
         <html>
           <head>
+            <meta charset="UTF-8">
             <style>
-              @page { size: 80mm auto; margin: 0; }
-              
-              /* FORCE MONOSPACE & PRINT ADJUST */
-              body {
-                width: 64mm;
-                margin: 0 auto;
-                padding: 2mm 0;
-                font-family: monospace !important;
-                font-weight: bold;
-                font-size: 11px;
-                line-height: 1.3;
-                color: #000;
-                background: #fff;
+              /* 🔥 CRITICAL: Force rendering for thermal printers */
+              * {
                 -webkit-print-color-adjust: exact !important;
                 print-color-adjust: exact !important;
+                color-adjust: exact !important;
+              }
+
+              @page { 
+                size: 80mm auto; 
+                margin: 0; 
+              }
+              
+              html, body {
+                width: 80mm;
+                margin: 0;
+                padding: 0;
+                background: white !important;
+                color: black !important;
+              }
+
+              body {
+                font-family: 'Courier New', Courier, monospace;
+                font-size: 12px;
+                line-height: 1.4;
+                padding: 3mm 2mm;
+                box-sizing: border-box;
+              }
+
+              /* Ensure all text is BLACK with high contrast */
+              body, body * {
+                color: #000000 !important;
+                background: transparent !important;
               }
 
               /* Receipt container */
               .receipt-preview {
                 width: 100%;
-                box-sizing: border-box;
+                display: block !important;
+                visibility: visible !important;
+              }
+
+              /* Show all children */
+              .receipt-preview * {
+                display: revert !important;
+                visibility: visible !important;
               }
 
               /* Store header */
               .receipt-store {
                 text-align: center;
-                margin-bottom: 4mm;
+                margin-bottom: 5mm;
               }
 
               .receipt-store-name {
-                font-size: 14px;
+                font-size: 16px;
                 font-weight: bold;
                 margin-bottom: 2mm;
                 text-transform: uppercase;
+                letter-spacing: 1px;
               }
 
               .receipt-store-sub {
-                font-size: 9px;
+                font-size: 10px;
                 margin: 1mm 0;
               }
 
-              /* Divider */
+              /* Divider - MUST be visible */
               .receipt-divider {
-                border-top: 1px dashed #000;
+                border: none;
+                border-top: 2px dashed #000000 !important;
                 margin: 3mm 0;
                 width: 100%;
+                height: 0;
+                display: block !important;
               }
 
               /* Items section */
               .receipt-items {
                 width: 100%;
-                margin: 2mm 0;
+                margin: 3mm 0;
+              }
+
+              .receipt-items-header,
+              .receipt-item-row {
+                display: flex !important;
+                justify-content: space-between;
+                width: 100%;
               }
 
               .receipt-items-header {
-                display: flex;
-                justify-content: space-between;
                 font-weight: bold;
-                font-size: 9px;
+                font-size: 10px;
                 margin-bottom: 2mm;
                 padding-bottom: 1mm;
-                border-bottom: 1px solid #000;
+                border-bottom: 1px solid #000000;
               }
 
               .receipt-item-row {
-                display: flex;
-                justify-content: space-between;
-                margin: 1.5mm 0;
-                font-size: 9px;
+                margin: 2mm 0;
+                font-size: 10px;
               }
 
-              /* Column widths */
+              /* Column alignment - ensure proper spacing */
               .r-col-name {
-                flex: 0 0 35%;
+                flex: 0 0 40%;
+                text-align: left;
                 overflow: hidden;
                 text-overflow: ellipsis;
                 white-space: nowrap;
-                text-align: left;
               }
 
               .r-col-qty {
-                flex: 0 0 20%;
+                flex: 0 0 18%;
                 text-align: right;
-                padding-right: 2mm;
               }
 
               .r-col-rate {
-                flex: 0 0 22%;
+                flex: 0 0 21%;
                 text-align: right;
-                padding-right: 2mm;
               }
 
               .r-col-amt {
-                flex: 0 0 23%;
+                flex: 0 0 21%;
                 text-align: right;
                 font-weight: bold;
               }
@@ -276,35 +306,57 @@ function setupPrinting(printerConfig) {
               .receipt-totals {
                 margin-top: 3mm;
                 padding-top: 2mm;
-                border-top: 1px solid #000;
+                border-top: 1px solid #000000;
               }
 
               .receipt-total-row {
-                display: flex;
+                display: flex !important;
                 justify-content: space-between;
-                margin: 1.5mm 0;
-                font-size: 10px;
+                margin: 2mm 0;
+                font-size: 11px;
               }
 
               .receipt-total-row-strong {
                 font-weight: bold;
-                font-size: 12px;
+                font-size: 14px;
                 margin-top: 2mm;
                 padding-top: 2mm;
-                border-top: 1px dashed #000;
+                border-top: 2px solid #000000;
               }
 
               /* Footer */
               .receipt-footer {
-                margin-top: 4mm;
+                margin-top: 5mm;
                 text-align: center;
-                font-size: 9px;
+                font-size: 10px;
               }
 
               .receipt-footer-sub {
-                font-size: 8px;
-                font-style: italic;
-                margin-top: 1mm;
+                font-size: 9px;
+                margin-top: 2mm;
+              }
+
+              /* 🔥 FORCE VISIBILITY - Override any hiding */
+              .receipt-preview,
+              .receipt-store,
+              .receipt-store-name,
+              .receipt-store-sub,
+              .receipt-divider,
+              .receipt-items,
+              .receipt-items-header,
+              .receipt-item-row,
+              .receipt-totals,
+              .receipt-total-row,
+              .receipt-footer {
+                display: block !important;
+                visibility: visible !important;
+                opacity: 1 !important;
+              }
+
+              .receipt-items-header,
+              .receipt-item-row,
+              .receipt-total-row {
+                display: flex !important;
               }
             </style>
           </head>
@@ -314,27 +366,68 @@ function setupPrinting(printerConfig) {
 
       win.webContents.once("did-finish-load", () => {
         setTimeout(async () => {
-          // FIX: Briefly show window to force Chromium to paint the content
-          // Hidden windows sometimes have empty separate layers
-          win.showInactive();
+          try {
+            // FIX: Briefly show window to force Chromium to paint the content
+            // Hidden windows sometimes have empty separate layers
+            win.showInactive();
 
-          await win.webContents.executeJavaScript('document.body.offsetHeight');
+            // Force layout calculation
+            await win.webContents.executeJavaScript('document.body.offsetHeight');
+            
+            // 🔥 DIAGNOSTIC: Log what's actually rendered
+            const bodyContent = await win.webContents.executeJavaScript(`
+              document.body.innerText.substring(0, 300)
+            `);
+            console.log('🖨️ PRINT CONTENT PREVIEW:', bodyContent);
+            
+            // Check if receipt div exists
+            const hasReceipt = await win.webContents.executeJavaScript(`
+              !!document.querySelector('.receipt-preview')
+            `);
+            console.log('🖨️ Receipt element found:', hasReceipt);
 
-          win.webContents.print(
-            {
+            // Count visible text
+            const textCount = await win.webContents.executeJavaScript(`
+              document.body.innerText.trim().length
+            `);
+            console.log('🖨️ Total text characters:', textCount);
+
+            if (textCount === 0) {
+              console.error('❌ WARNING: No text content detected in receipt!');
+            }
+
+            // 🔥 THERMAL PRINTER OPTIMIZED SETTINGS
+            const printOptions = {
               silent: true,
               deviceName: printerConfig.printer_name || undefined,
-              printBackground: true, // 🔴 REQUIRED for some thermal printers to print text layers
-              color: true, // 🔥 CHANGED: Use color mode to ensure black text renders properly
+              printBackground: true, // CRITICAL for text layers on thermal
+              color: false, // 🔥 REVERTED: Thermal printers work better with grayscale/black mode
               landscape: false,
               margins: { marginType: "none" },
-              pageSize: { width: 80000, height: 3000000 }, // Keep continuous roll length
+              pageSize: { width: 80000, height: 3000000 }, // 80mm width, auto height
               scaleFactor: 100,
-              dpi: { horizontal: 203, vertical: 203 }, // 🔴 THERMAL DPI (Standard)
-            },
-            () => win.close()
-          );
-        }, 500);
+              dpi: { horizontal: 203, vertical: 203 }, // Standard thermal DPI
+              shouldPrintBackgrounds: true, // Extra flag for some drivers
+            };
+
+            console.log('🖨️ Print options:', JSON.stringify(printOptions, null, 2));
+
+            win.webContents.print(
+              printOptions,
+              (success, failureReason) => {
+                if (success) {
+                  console.log('✅ Print job sent successfully');
+                } else {
+                  console.error('❌ Print job failed:', failureReason);
+                }
+                win.close();
+              }
+            );
+          } catch (error) {
+            console.error('❌ Print preparation error:', error);
+            win.close();
+          }
+        }, 800); // Increased timeout for better rendering
       });
 
       // FIX: Reverting to data-uri logic as temp file was failing
