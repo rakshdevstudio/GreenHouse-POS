@@ -166,19 +166,157 @@ function setupPrinting(printerConfig) {
           <head>
             <style>
               @page { size: 64mm auto; margin: 0; }
+              
               body { 
-                width: 64mm; 
-                margin: 0; 
-                padding: 0;
-                font-family: 'Courier New', 'Courier', monospace;
+                width: 64mm; /* Safe width for 64mm paper */
+                margin: 0 auto;
+                padding: 2mm 0;
+                font-family: Arial, Helvetica, sans-serif; /* Thicker than Courier */
+                font-weight: bold; /* Make text darker/bolder */
+                font-size: 11px;
+                line-height: 1.3;
+                color: #000;
+                background: #fff;
                 -webkit-print-color-adjust: exact;
                 print-color-adjust: exact;
-                color: #000000 !important;
               }
+              
               * {
                 -webkit-print-color-adjust: exact;
                 print-color-adjust: exact;
-                font-family: 'Courier New', 'Courier', monospace;
+              }
+              
+              /* Receipt styles matching App.css */
+              .receipt-preview {
+                background: #ffffff;
+                padding: 8px 10px;
+                font-size: 11px;
+                line-height: 1.5;
+                width: 64mm;
+                max-width: 64mm;
+                margin: 0 auto;
+                box-sizing: border-box;
+                color: #000000;
+                font-family: Arial, sans-serif;
+                font-weight: 500;
+              }
+
+              .receipt-store {
+                text-align: center;
+                margin-bottom: 8px;
+              }
+
+              .receipt-store-name {
+                font-weight: 700;
+                font-size: 15px;
+                color: #000000;
+                letter-spacing: 0.1em;
+                margin-bottom: 4px;
+              }
+
+              .receipt-store-sub {
+                color: #000000;
+                font-size: 10px;
+                font-weight: 500;
+                line-height: 1.6;
+              }
+
+              .receipt-divider {
+                border-top: 1px dashed #000000;
+                margin: 8px 0;
+              }
+
+              .receipt-items {
+                display: flex;
+                flex-direction: column;
+                gap: 2px;
+              }
+
+              .receipt-items-header,
+              .receipt-item-row {
+                display: grid;
+                grid-template-columns: 2fr 0.8fr 1fr 1fr;
+                column-gap: 6px;
+                align-items: baseline;
+              }
+
+              .receipt-items-header {
+                font-weight: 700;
+                color: #000000;
+                margin-bottom: 4px;
+                font-size: 11px;
+                border-bottom: 1px dashed #000000;
+                padding-bottom: 3px;
+              }
+
+              .receipt-item-row {
+                font-size: 11px;
+                color: #000000;
+                font-weight: 500;
+                padding: 2px 0;
+              }
+
+              .r-col-name {
+                overflow: hidden;
+                text-overflow: ellipsis;
+                white-space: nowrap;
+                text-align: left;
+              }
+
+              .r-col-qty,
+              .r-col-rate,
+              .r-col-amt {
+                text-align: right;
+                font-weight: 600;
+              }
+
+              .receipt-empty-items {
+                font-size: 11px;
+                color: #000000;
+                margin-top: 4px;
+                text-align: center;
+                font-weight: 500;
+              }
+
+              .receipt-totals {
+                margin-top: 8px;
+                border-top: 1px dashed #000000;
+                padding-top: 6px;
+              }
+
+              .receipt-total-row {
+                display: flex;
+                justify-content: space-between;
+                margin-bottom: 4px;
+                font-size: 11px;
+                color: #000000;
+                font-weight: 600;
+              }
+
+              .receipt-total-row-strong {
+                font-weight: 700;
+                font-size: 13px;
+                border-top: 1px dashed #000000;
+                padding-top: 6px;
+                margin-top: 4px;
+              }
+
+              .receipt-footer {
+                margin-top: 10px;
+                text-align: center;
+                color: #000000;
+                font-size: 10px;
+                font-weight: 600;
+                border-top: 1px dashed #000000;
+                padding-top: 8px;
+              }
+
+              .receipt-footer-sub {
+                font-size: 9px;
+                color: #000000;
+                font-weight: 500;
+                margin-top: 3px;
+                font-style: italic;
               }
             </style>
           </head>

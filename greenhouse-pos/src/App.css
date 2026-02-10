@@ -707,81 +707,73 @@ button {
 .receipt-preview {
   background: #ffffff;
   border-radius: 10px;
-  padding: 6px 8px;
+  padding: 8px 10px;
   border: 1px dashed rgba(148, 163, 184, 0.8);
-  font-size: 9px;
-  line-height: 1.3;
+  font-size: 11px;
+  line-height: 1.5;
   width: 64mm;
   max-width: 64mm;
   margin: 0 auto;
   box-sizing: border-box;
   color: #000000;
-  font-family: 'Courier New', 'Courier', monospace;
-  font-weight: 700;
+  font-family: Arial, sans-serif;
+  font-weight: 500;
 }
 
 .receipt-store {
   text-align: center;
   margin-bottom: 8px;
-  padding-bottom: 4px;
 }
 
 .receipt-store-name {
-  font-weight: 900;
-  font-size: 16px;
+  font-weight: 700;
+  font-size: 15px;
   color: #000000;
-  letter-spacing: 0.05em;
+  letter-spacing: 0.1em;
   margin-bottom: 4px;
-  text-transform: uppercase;
 }
 
 .receipt-store-sub {
   color: #000000;
-  font-size: 9px;
-  font-weight: 700;
+  font-size: 10px;
+  font-weight: 500;
   line-height: 1.6;
-  margin: 1px 0;
 }
 
 .receipt-divider {
-  border-top: 2px solid #000000;
+  border-top: 1px dashed #000000;
   margin: 8px 0;
-  border-style: solid;
 }
 
-/* Items table - adjusted for 64mm width with monospace */
+/* Items table - adjusted for 64mm width */
 .receipt-items {
   display: flex;
   flex-direction: column;
-  gap: 1px;
-  margin: 4px 0;
+  gap: 2px;
 }
 
 .receipt-items-header,
 .receipt-item-row {
   display: grid;
-  grid-template-columns: 1.8fr 0.7fr 0.9fr 0.9fr;
-  column-gap: 4px;
-  align-items: center;
-  padding: 2px 0;
+  grid-template-columns: 2fr 0.8fr 1fr 1fr;
+  column-gap: 6px;
+  align-items: baseline;
 }
 
 .receipt-items-header {
-  font-weight: 900;
+  font-weight: 700;
   color: #000000;
   margin-bottom: 4px;
-  font-size: 9px;
-  border-bottom: 2px solid #000000;
+  font-size: 11px;
+  border-bottom: 1px dashed #000000;
   padding-bottom: 3px;
-  text-transform: uppercase;
 }
 
 .receipt-item-row {
-  font-size: 9px;
+  font-size: 11px;
   color: #000000;
-  font-weight: 700;
-  border-bottom: 1px dashed rgba(0, 0, 0, 0.2);
-  padding: 3px 0;
+  font-weight: 500;
+  padding: 2px 0;
 }
 
 .r-col-name {
@@ -789,34 +781,27 @@ button {
   text-overflow: ellipsis;
   white-space: nowrap;
   text-align: left;
-  padding-right: 2px;
 }
 
-.r-col-qty {
-  text-align: center;
-  font-weight: 900;
-}
-
+.r-col-qty,
 .r-col-rate,
 .r-col-amt {
   text-align: right;
-  font-weight: 900;
-  font-variant-numeric: tabular-nums;
+  font-weight: 600;
 }
 
 .receipt-empty-items {
-  font-size: 9px;
+  font-size: 11px;
   color: #000000;
   margin-top: 4px;
   text-align: center;
-  font-weight: 700;
-  padding: 8px 0;
+  font-weight: 500;
 }
 
 /* Totals */
 .receipt-totals {
   margin-top: 8px;
-  border-top: 2px solid #000000;
+  border-top: 1px dashed #000000;
   padding-top: 6px;
 }
 
@@ -824,30 +809,17 @@ button {
   display: flex;
   justify-content: space-between;
   margin-bottom: 4px;
-  font-size: 10px;
+  font-size: 11px;
   color: #000000;
-  font-weight: 800;
-  padding: 2px 4px;
-}
-
-.receipt-total-row span:first-child {
-  text-transform: uppercase;
-  letter-spacing: 0.03em;
-}
-
-.receipt-total-row span:last-child {
-  font-variant-numeric: tabular-nums;
-  font-weight: 900;
+  font-weight: 600;
 }
 
 .receipt-total-row-strong {
-  font-weight: 900;
+  font-weight: 700;
   font-size: 13px;
-  border-top: 2px double #000000;
-  border-bottom: 2px double #000000;
-  padding: 6px 4px;
+  border-top: 1px dashed #000000;
+  padding-top: 6px;
   margin-top: 4px;
-  background: rgba(0, 0, 0, 0.05);
 }
 
 /* Footer */
@@ -855,24 +827,18 @@ button {
   margin-top: 10px;
   text-align: center;
   color: #000000;
-  font-size: 9px;
-  font-weight: 800;
-  border-top: 2px solid #000000;
-  padding-top: 8px;
-  line-height: 1.6;
-}
-
-.receipt-footer div:first-child {
   font-size: 10px;
-  margin-bottom: 4px;
+  font-weight: 600;
+  border-top: 1px dashed #000000;
+  padding-top: 8px;
 }
 
 .receipt-footer-sub {
-  font-size: 8px;
+  font-size: 9px;
   color: #000000;
-  font-weight: 700;
+  font-weight: 500;
   margin-top: 3px;
-  opacity: 0.8;
+  font-style: italic;
 }
 
 /* Make main app content stretch full width */
