@@ -1,0 +1,398 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>Print Test - Receipt</title>
+<style>
+  /* Screen styles */
+  body {
+    font-family: Arial, sans-serif;
+    max-width: 600px;
+    margin: 20px auto;
+    padding: 20px;
+  }
+  
+  .test-info {
+    background: #f0f9ff;
+    border: 2px solid #0284c7;
+    padding: 15px;
+    border-radius: 8px;
+    margin-bottom: 20px;
+  }
+  
+  .controls {
+    margin: 20px 0;
+    padding: 15px;
+    background: #f3f4f6;
+    border-radius: 8px;
+  }
+  
+  button {
+    padding: 12px 24px;
+    font-size: 16px;
+    background: #10b981;
+    color: white;
+    border: none;
+    border-radius: 6px;
+    cursor: pointer;
+    margin-right: 10px;
+  }
+  
+  button:hover {
+    background: #059669;
+  }
+
+  /* Receipt preview on screen */
+  .receipt-preview {
+    background: #ffffff;
+    border-radius: 10px;
+    padding: 10px 12px;
+    border: 1px dashed rgba(148, 163, 184, 0.8);
+    font-size: 11px;
+    line-height: 1.35;
+  }
+
+  .receipt-store {
+    text-align: center;
+    margin-bottom: 4px;
+  }
+
+  .receipt-store-name {
+    font-weight: 700;
+    font-size: 13px;
+    color: #0f172a;
+  }
+
+  .receipt-store-sub {
+    color: #94a3b8;
+    font-size: 11px;
+  }
+
+  .receipt-divider {
+    border-top: 1px dashed rgba(148, 163, 184, 0.7);
+    margin: 6px 0;
+  }
+
+  .receipt-items {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+  }
+
+  .receipt-items-header,
+  .receipt-item-row {
+    display: grid;
+    grid-template-columns: 2.2fr 0.9fr 1.1fr 1.1fr;
+    column-gap: 4px;
+    align-items: baseline;
+  }
+
+  .receipt-items-header {
+    font-weight: 600;
+    color: #0f172a;
+    margin-bottom: 2px;
+  }
+
+  .receipt-item-row {
+    font-size: 11px;
+    color: #334155;
+  }
+
+  .r-col-name {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .r-col-qty,
+  .r-col-rate,
+  .r-col-amt {
+    text-align: right;
+  }
+
+  .receipt-totals {
+    margin-top: 4px;
+  }
+
+  .receipt-total-row {
+    display: flex;
+    justify-content: space-between;
+    margin-bottom: 2px;
+  }
+
+  .receipt-total-row-strong {
+    font-weight: 700;
+    font-size: 12px;
+  }
+
+  .receipt-footer {
+    margin-top: 6px;
+    text-align: center;
+    font-size: 10px;
+  }
+
+  .receipt-footer-sub {
+    font-size: 9px;
+    color: #94a3b8;
+    margin-top: 2px;
+  }
+
+  /* PRINT STYLES - Matching the fixed CSS */
+  @media print {
+    @page {
+      size: 80mm auto;
+      margin: 0;
+    }
+
+    html,
+    body {
+      width: 80mm;
+      margin: 0;
+      padding: 0;
+      background: #ffffff !important;
+      -webkit-print-color-adjust: exact;
+      print-color-adjust: exact;
+    }
+
+    /* Hide everything except receipt */
+    body > *:not(.receipt-preview) {
+      display: none !important;
+    }
+
+    /* Show ONLY the receipt preview */
+    .receipt-preview {
+      display: block !important;
+      visibility: visible !important;
+    }
+
+    .receipt-preview * {
+      display: revert !important;
+      visibility: visible !important;
+    }
+
+    .receipt-preview {
+      position: absolute;
+      left: 0;
+      top: 0;
+      width: 80mm;
+      max-width: 80mm;
+      padding: 3mm 2mm;
+      box-sizing: border-box;
+      font-family: "Courier New", Courier, monospace;
+      font-size: 10px;
+      line-height: 1.4;
+      color: #000000;
+      background: #ffffff;
+      border: none !important;
+      box-shadow: none !important;
+      border-radius: 0 !important;
+    }
+
+    .receipt-store {
+      text-align: center;
+      margin-bottom: 4mm;
+    }
+
+    .receipt-store-name {
+      font-size: 16px;
+      font-weight: bold;
+      margin-bottom: 2mm;
+      text-transform: uppercase;
+    }
+
+    .receipt-store-sub {
+      font-size: 10px;
+      margin: 1mm 0;
+    }
+
+    .receipt-divider {
+      border-top: 1px dashed #000;
+      margin: 3mm 0;
+      width: 100%;
+    }
+
+    .receipt-items {
+      width: 100%;
+      margin: 2mm 0;
+    }
+
+    .receipt-items-header {
+      display: flex !important;
+      justify-content: space-between;
+      font-weight: bold;
+      font-size: 9px;
+      margin-bottom: 2mm;
+      padding-bottom: 1mm;
+      border-bottom: 1px solid #000;
+    }
+
+    .receipt-item-row {
+      display: flex !important;
+      justify-content: space-between;
+      margin: 1.5mm 0;
+      font-size: 9px;
+      page-break-inside: avoid;
+    }
+
+    .r-col-name {
+      flex: 0 0 35%;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+      text-align: left;
+    }
+
+    .r-col-qty {
+      flex: 0 0 20%;
+      text-align: right;
+      padding-right: 2mm;
+    }
+
+    .r-col-rate {
+      flex: 0 0 22%;
+      text-align: right;
+      padding-right: 2mm;
+    }
+
+    .r-col-amt {
+      flex: 0 0 23%;
+      text-align: right;
+      font-weight: bold;
+    }
+
+    .receipt-totals {
+      margin-top: 3mm;
+      padding-top: 2mm;
+      border-top: 1px solid #000;
+    }
+
+    .receipt-total-row {
+      display: flex !important;
+      justify-content: space-between;
+      margin: 1.5mm 0;
+      font-size: 11px;
+    }
+
+    .receipt-total-row-strong {
+      font-weight: bold;
+      font-size: 13px;
+      margin-top: 2mm;
+      padding-top: 2mm;
+      border-top: 1px dashed #000;
+    }
+
+    .receipt-footer {
+      margin-top: 4mm;
+      text-align: center;
+      font-size: 10px;
+      page-break-inside: avoid;
+    }
+
+    .receipt-footer-sub {
+      font-size: 9px;
+      font-style: italic;
+      margin-top: 1mm;
+    }
+  }
+</style>
+</head>
+<body>
+  <div class="test-info">
+    <h2>🖨️ Printer Test - Receipt Print Fix</h2>
+    <p><strong>Test Purpose:</strong> Verify that receipts now print with visible text (not blank).</p>
+    <p><strong>Expected Result:</strong> Black text should appear on the printed receipt.</p>
+  </div>
+
+  <div class="controls">
+    <button onclick="window.print()">🖨️ Print Test Receipt</button>
+    <button onclick="location.reload()">🔄 Reload Page</button>
+  </div>
+
+  <h3>Receipt Preview (What should print):</h3>
+
+  <div class="receipt-preview">
+    <!-- Store Header -->
+    <div class="receipt-store">
+      <div class="receipt-store-name">GREENHOUSE</div>
+      <div class="receipt-store-sub">123 Main Street</div>
+      <div class="receipt-store-sub">City, State 12345</div>
+      <div class="receipt-store-sub">Invoice: TEST-001</div>
+      <div class="receipt-store-sub">10/02/2026, 4:24 PM</div>
+    </div>
+
+    <div class="receipt-divider"></div>
+
+    <!-- Items Table -->
+    <div class="receipt-items">
+      <div class="receipt-items-header">
+        <span class="r-col-name">Item</span>
+        <span class="r-col-qty">Qty</span>
+        <span class="r-col-rate">Rate</span>
+        <span class="r-col-amt">Amount</span>
+      </div>
+
+      <div class="receipt-item-row">
+        <span class="r-col-name">Potato (1kg)</span>
+        <span class="r-col-qty">2.000</span>
+        <span class="r-col-rate">₹25.00</span>
+        <span class="r-col-amt">₹50.00</span>
+      </div>
+
+      <div class="receipt-item-row">
+        <span class="r-col-name">Tomato (1kg)</span>
+        <span class="r-col-qty">1.500</span>
+        <span class="r-col-rate">₹30.00</span>
+        <span class="r-col-amt">₹45.00</span>
+      </div>
+
+      <div class="receipt-item-row">
+        <span class="r-col-name">Onion (1kg)</span>
+        <span class="r-col-qty">3.000</span>
+        <span class="r-col-rate">₹20.00</span>
+        <span class="r-col-amt">₹60.00</span>
+      </div>
+    </div>
+
+    <div class="receipt-divider"></div>
+
+    <!-- Totals -->
+    <div class="receipt-totals">
+      <div class="receipt-total-row">
+        <span>Subtotal</span>
+        <span>₹155.00</span>
+      </div>
+      <div class="receipt-total-row">
+        <span>Tax / Adjustments</span>
+        <span>₹0.00</span>
+      </div>
+      <div class="receipt-total-row receipt-total-row-strong">
+        <span>Grand total</span>
+        <span>₹155.00</span>
+      </div>
+    </div>
+
+    <!-- Footer -->
+    <div class="receipt-footer">
+      <div>Thank you for shopping with us 🌿</div>
+      <div class="receipt-footer-sub">
+        Powered by your Greenhouse POS
+      </div>
+    </div>
+  </div>
+
+  <div style="margin-top: 30px; padding: 15px; background: #fef3c7; border-radius: 8px;">
+    <h3>✅ What to Check:</h3>
+    <ol>
+      <li><strong>Text is visible:</strong> All text should print in black ink (not blank)</li>
+      <li><strong>Layout is correct:</strong> Items should be in columns with proper alignment</li>
+      <li><strong>All sections visible:</strong> Store name, items, totals, and footer should all appear</li>
+      <li><strong>Dividers visible:</strong> Dashed lines should separate sections</li>
+    </ol>
+  </div>
+
+  <script>
+    console.log('Print test page loaded');
+    console.log('Click "Print Test Receipt" to test thermal printer output');
+  </script>
+</body>
+</html>
