@@ -165,8 +165,21 @@ function setupPrinting(printerConfig) {
         <html>
           <head>
             <style>
-              @page { size: 80mm auto; margin: 0; }
-              body { width: 80mm; margin: 0; font-family: monospace; }
+              @page { size: 64mm auto; margin: 0; }
+              body { 
+                width: 64mm; 
+                margin: 0; 
+                padding: 0;
+                font-family: 'Courier New', 'Courier', monospace;
+                -webkit-print-color-adjust: exact;
+                print-color-adjust: exact;
+                color: #000000 !important;
+              }
+              * {
+                -webkit-print-color-adjust: exact;
+                print-color-adjust: exact;
+                font-family: 'Courier New', 'Courier', monospace;
+              }
             </style>
           </head>
           <body>${receiptHtml}</body>
@@ -182,7 +195,7 @@ function setupPrinting(printerConfig) {
               color: false,
               landscape: false,
               margins: { marginType: "none" },
-              pageSize: { width: 80000, height: 297000 },
+              pageSize: { width: 64000, height: 297000 },
               scaleFactor: 100,
             },
             () => win.close()
