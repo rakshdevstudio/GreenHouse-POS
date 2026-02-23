@@ -3,6 +3,20 @@
 
 🔗 Live Demo: https://green-house-pos.vercel.app  
 
+## 🔑 Demo Access (For Testing Only)
+
+You can explore the system using the demo environment:
+
+**Store Login**
+- Username: store1
+- Password: store1pass
+
+**Admin Login**
+- Username: admin
+- Password: adminpass
+
+⚠️ These credentials are for demonstration purposes only.
+
 ---
 
 ## 📌 Overview
